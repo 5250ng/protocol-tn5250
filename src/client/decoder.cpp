@@ -1,0 +1,310 @@
+// protocol-tn5250 - Standalone TN5250 protocol library
+// Copyright (C) 2025-2026 Remi GASCOU (Podalirius)
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#include "decoder.h"
+#include "protocol_constants.h"
+
+#include <algorithm>
+#include <cstdio>
+
+namespace tn5250::client {
+
+Decoder::Decoder(const DecoderCallbacks &callbacks)
+    : m_state(ParserState::WaitingForCommand), m_callbacks(callbacks) {}
+
+void Decoder::parseData(const std::vector<uint8_t> &data) {
+    m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+
+    using namespace tn5250::protocol;
+    while (true) {
+        if (static_cast<int>(m_buffer.size()) < GDS_MIN_RECORD_LEN) break;
+
+        const uint8_t b0 = m_buffer[0];
+        const uint8_t b1 = m_buffer[1];
+        const int recLen = (static_cast<int>(b0) << 8) | static_cast<int>(b1);
+
+        if (recLen < GDS_MIN_RECORD_LEN || recLen > GDS_MAX_RECORD_LEN) {
+            m_buffer.erase(m_buffer.begin());
+            continue;
+        }
+        if (static_cast<int>(m_buffer.size()) < recLen) break;
+
+        std::vector<uint8_t> rec(m_buffer.begin(), m_buffer.begin() + recLen);
+        m_buffer.erase(m_buffer.begin(), m_buffer.begin() + recLen);
+
+        if (static_cast<int>(rec.size()) < 7) {
+            if (m_callbacks.onParseError) m_callbacks.onParseError("TN5250: record too short");
+            continue;
+        }
+
+        const uint8_t r2 = rec[2];
+        const uint8_t r3 = rec[3];
+        if (!(r2 == GDS_RECORD_TYPE_HI && r3 == GDS_RECORD_TYPE_LO)) {
+            if (m_callbacks.onRawScreenData) m_callbacks.onRawScreenData(rec);
+            continue;
+        }
+
+        const int varHdrStart = 6;
+        const int varLen = rec[varHdrStart];
+        if (static_cast<int>(rec.size()) < varHdrStart + 1 + varLen) {
+            if (m_callbacks.onParseError) m_callbacks.onParseError("TN5250: incomplete variable header");
+            continue;
+        }
+        if (varLen < 4) {
+            if (m_callbacks.onParseError) m_callbacks.onParseError("TN5250: variable header too short");
+            continue;
+        }
+
+        [[maybe_unused]] const uint8_t flagsHi = rec[varHdrStart + 1];
+        [[maybe_unused]] const uint8_t flagsLo = rec[varHdrStart + 2];
+        const uint8_t opcode = rec[varHdrStart + 3];
+
+        const int payloadStart = varHdrStart + varLen;
+        int payloadLen = static_cast<int>(rec.size()) - payloadStart;
+        if (payloadLen < 0) payloadLen = 0;
+        std::vector<uint8_t> payload(rec.begin() + payloadStart, rec.begin() + payloadStart + payloadLen);
+
+        if (opcode == GDS_OPCODE_SAVE_SCREEN) {
+            if (m_callbacks.onSaveScreen) m_callbacks.onSaveScreen();
+            continue;
+        }
+        if (opcode == GDS_OPCODE_INVITE) {
+            if (m_callbacks.onInvite) m_callbacks.onInvite();
+            continue;
+        }
+        if (opcode == GDS_OPCODE_CANCEL_INVITE) {
+            if (m_callbacks.onCancelInvite) m_callbacks.onCancelInvite();
+            continue;
+        }
+        if (opcode == GDS_OPCODE_MSG_LIGHT_ON) {
+            if (m_callbacks.onMessageLightOn) m_callbacks.onMessageLightOn();
+            continue;
+        }
+        if (opcode == GDS_OPCODE_MSG_LIGHT_OFF) {
+            if (m_callbacks.onMessageLightOff) m_callbacks.onMessageLightOff();
+            continue;
+        }
+
+        if (opcode == GDS_OPCODE_OUTPUT_ONLY || opcode == GDS_OPCODE_PUT_GET || opcode == GDS_OPCODE_RESTORE) {
+            std::vector<uint8_t> display;
+            for (int i = 0; i < static_cast<int>(payload.size());) {
+                uint8_t ch = payload[i];
+                if (ch == ESC) {
+                    if (i + 1 >= static_cast<int>(payload.size())) break;
+                    uint8_t cc = payload[i + 1];
+
+                    if (cc == CC_CLEAR_UNIT) {
+                        if (m_callbacks.onClearScreen) m_callbacks.onClearScreen();
+                        i += 2; continue;
+                    }
+                    if (cc == CC_CLEAR_UNIT_ALTERNATE) {
+                        if (m_callbacks.onClearScreenAlternate) m_callbacks.onClearScreenAlternate();
+                        i += 2; continue;
+                    }
+                    if (cc == CC_WRITE_ERROR_CODE) {
+                        int j = i + 2;
+                        std::vector<uint8_t> errData;
+                        while (j < static_cast<int>(payload.size())) {
+                            if (payload[j] == ESC) break;
+                            errData.push_back(payload[j]);
+                            j++;
+                        }
+                        if (m_callbacks.onWriteErrorCode) m_callbacks.onWriteErrorCode(errData);
+                        i = j; continue;
+                    }
+                    if (cc == CC_ROLL) {
+                        if (i + 3 < static_cast<int>(payload.size())) {
+                            uint8_t ctrl1 = payload[i + 2];
+                            uint8_t ctrl2 = payload[i + 3];
+                            bool up = (ctrl1 & 0x80) != 0;
+                            uint8_t lineCount = ctrl2 & 0x1F;
+                            uint8_t topRow = 0, botRow = 0;
+                            if (i + 5 < static_cast<int>(payload.size())) {
+                                topRow = payload[i + 4] - 1;
+                                botRow = payload[i + 5] - 1;
+                                i += 6;
+                            } else {
+                                i += 4;
+                            }
+                            if (m_callbacks.onRoll) m_callbacks.onRoll(topRow, botRow, lineCount, up);
+                        } else {
+                            i += 4;
+                        }
+                        continue;
+                    }
+                    if (cc == CC_WRITE_ERROR_CODE_TO_WINDOW) {
+                        int j = i + 2;
+                        std::vector<uint8_t> errData;
+                        while (j < static_cast<int>(payload.size())) {
+                            if (payload[j] == ESC) break;
+                            errData.push_back(payload[j]);
+                            j++;
+                        }
+                        if (m_callbacks.onWriteErrorCode) m_callbacks.onWriteErrorCode(errData);
+                        i = j; continue;
+                    }
+                    if (cc == CC_READ_INPUT_FIELDS) {
+                        if (m_callbacks.onCommandReceived)
+                            m_callbacks.onCommandReceived(TN5250Command::READ_INPUT_FIELDS, {});
+                        i += 4; continue;
+                    }
+                    if (cc == CC_CLEAR_FORMAT_TABLE) {
+                        if (m_callbacks.onClearFormatTable) m_callbacks.onClearFormatTable();
+                        i += 2; continue;
+                    }
+                    if (cc == CC_READ_MDT_FIELDS) {
+                        if (m_callbacks.onCommandReceived)
+                            m_callbacks.onCommandReceived(TN5250Command::READ_MDT_FIELDS, {});
+                        i += 4; continue;
+                    }
+                    if (cc == CC_READ_IMMEDIATE) {
+                        if (m_callbacks.onCommandReceived)
+                            m_callbacks.onCommandReceived(TN5250Command::READ_IMMEDIATE, {});
+                        i += 4; continue;
+                    }
+                    if (cc == CC_READ_SCREEN || cc == CC_READ_SCREEN_ALT) {
+                        bool includeAttrs = (cc == CC_READ_SCREEN_ALT);
+                        if (m_callbacks.onReadScreen) m_callbacks.onReadScreen(includeAttrs);
+                        i += 4; continue;
+                    }
+                    if (cc == CC_WRITE_STRUCTURED_FIELD) {
+                        int j = i + 2;
+                        std::vector<uint8_t> sfData;
+                        while (j < static_cast<int>(payload.size())) {
+                            if (payload[j] == ESC) break;
+                            sfData.push_back(payload[j]);
+                            j++;
+                        }
+                        if (m_callbacks.onWriteStructuredField) m_callbacks.onWriteStructuredField(sfData);
+                        i = j; continue;
+                    }
+                    if (cc == CC_WRITE_TO_DISPLAY) {
+                        if (i + 3 >= static_cast<int>(payload.size())) break;
+                        uint8_t ctrl1 = payload[i + 2];
+                        uint8_t ctrl2 = payload[i + 3];
+                        if (m_callbacks.onControlCharacters) m_callbacks.onControlCharacters(ctrl1, ctrl2);
+                        if (ctrl2 & 0x08) {
+                            if (m_callbacks.onKeyboardUnlock) m_callbacks.onKeyboardUnlock();
+                        }
+                        int j = i + 4;
+                        while (j < static_cast<int>(payload.size())) {
+                            uint8_t ob = payload[j];
+                            if (ob == ESC) break;
+                            if (ob == SOH) {
+                                if (j + 1 >= static_cast<int>(payload.size())) { j = payload.size(); break; }
+                                uint8_t sohLen = payload[j + 1];
+                                if (sohLen >= 4) {
+                                    uint8_t errorRow = (j + 5 < static_cast<int>(payload.size())) ? payload[j + 5] : 0;
+                                    uint8_t ckm1 = (sohLen >= 5 && j + 6 < static_cast<int>(payload.size())) ? payload[j + 6] : 0;
+                                    uint8_t ckm2 = (sohLen >= 6 && j + 7 < static_cast<int>(payload.size())) ? payload[j + 7] : 0;
+                                    uint8_t ckm3 = (sohLen >= 7 && j + 8 < static_cast<int>(payload.size())) ? payload[j + 8] : 0;
+                                    if (m_callbacks.onSoh) m_callbacks.onSoh(errorRow, ckm1, ckm2, ckm3);
+                                }
+                                j += 2 + sohLen;
+                                if (j > static_cast<int>(payload.size())) j = payload.size();
+                                continue;
+                            }
+                            if (ob == ORDER_SBA || ob == ORDER_IC || ob == ORDER_MC) {
+                                int n = std::min(3, static_cast<int>(payload.size()) - j);
+                                display.insert(display.end(), payload.begin() + j, payload.begin() + j + n);
+                                j += n; continue;
+                            }
+                            if (ob == ORDER_RA || ob == ORDER_EA) {
+                                int n = std::min(4, static_cast<int>(payload.size()) - j);
+                                display.insert(display.end(), payload.begin() + j, payload.begin() + j + n);
+                                j += n; continue;
+                            }
+                            if (ob == ORDER_TD) {
+                                if (j + 1 < static_cast<int>(payload.size())) {
+                                    int tdLen = payload[j + 1];
+                                    int n = std::min(2 + tdLen, static_cast<int>(payload.size()) - j);
+                                    display.insert(display.end(), payload.begin() + j, payload.begin() + j + n);
+                                    j += n;
+                                } else {
+                                    display.push_back(ob);
+                                    j++;
+                                }
+                                continue;
+                            }
+                            if (ob == ORDER_WDSF) {
+                                if (j + 2 < static_cast<int>(payload.size())) {
+                                    int wdsfLen = (static_cast<int>(payload[j + 1]) << 8) | static_cast<int>(payload[j + 2]);
+                                    if (wdsfLen < 2) wdsfLen = 2;
+                                    j += 1 + wdsfLen;
+                                    if (j > static_cast<int>(payload.size())) j = payload.size();
+                                } else {
+                                    j = payload.size();
+                                }
+                                continue;
+                            }
+                            if (ob == ORDER_SF) {
+                                int k = j + 1;
+                                if (k + 1 < static_cast<int>(payload.size())) k += 2;
+                                else { k = payload.size(); }
+                                while (k + 1 < static_cast<int>(payload.size()) &&
+                                       (payload[k] & 0xE0) != 0x20) {
+                                    k += 2;
+                                }
+                                if (k < static_cast<int>(payload.size())) k++;
+                                int fieldLen = 0;
+                                if (k + 1 < static_cast<int>(payload.size())) {
+                                    fieldLen = (static_cast<int>(payload[k]) << 8) | static_cast<int>(payload[k + 1]);
+                                    k += 2;
+                                }
+                                k += fieldLen;
+                                if (k > static_cast<int>(payload.size())) k = payload.size();
+                                int n = k - j;
+                                display.insert(display.end(), payload.begin() + j, payload.begin() + j + n);
+                                j = k; continue;
+                            }
+                            display.push_back(ob);
+                            j++;
+                        }
+                        i = j;
+                        continue;
+                    }
+                    // Unknown ESC command
+                    i += 2;
+                    continue;
+                }
+                if (ch == SOH) {
+                    if (i + 1 >= static_cast<int>(payload.size())) break;
+                    uint8_t sohLen = payload[i + 1];
+                    if (sohLen >= 4) {
+                        uint8_t errorRow = (i + 5 < static_cast<int>(payload.size())) ? payload[i + 5] : 0;
+                        uint8_t ckm1 = (sohLen >= 5 && i + 6 < static_cast<int>(payload.size())) ? payload[i + 6] : 0;
+                        uint8_t ckm2 = (sohLen >= 6 && i + 7 < static_cast<int>(payload.size())) ? payload[i + 7] : 0;
+                        uint8_t ckm3 = (sohLen >= 7 && i + 8 < static_cast<int>(payload.size())) ? payload[i + 8] : 0;
+                        if (m_callbacks.onSoh) m_callbacks.onSoh(errorRow, ckm1, ckm2, ckm3);
+                    }
+                    i += 2 + sohLen;
+                    if (i > static_cast<int>(payload.size())) i = payload.size();
+                    continue;
+                }
+                display.push_back(ch);
+                i++;
+            }
+            if (!display.empty()) {
+                if (m_callbacks.onRawScreenData) m_callbacks.onRawScreenData(display);
+            }
+            continue;
+        }
+    }
+}
+
+void Decoder::reset() { m_state = ParserState::WaitingForCommand; }
+
+} // namespace tn5250::client
