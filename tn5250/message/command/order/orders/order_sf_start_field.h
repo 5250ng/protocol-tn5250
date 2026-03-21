@@ -17,8 +17,9 @@
 #pragma once
 
 #include "../order_base.h"
-#include "utils/binary/binary.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/binary/binary.h"
+#include "tn5250/utils/endianness/little_endian.h"
+#include "tn5250/utils/hex/hex.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -26,38 +27,50 @@
 namespace tn5250::message::command::order {
 
 /**
- * Repeat to Address (RA) Order
+ * Start Field (SF) Order
  *
  * @see IBM SA21-9247-6 - IBM 5250 Information Display System Functions Reference Manual
  *
- * Format:
+ * Function: This order defines input and output fields.
+ * If an input field is being defined, it also resets any
+ * pending aid byte and locks the keyboard.
  *
- * RA Order   Bytes 1 and 2           Bytes 3 to ?
+ * Note: Although this order can be used for output
+ * fields, it is not recommended because it degrades
+ * performance. Use the SBA order instead.
  *
- *       X'02'    Row Address   Column Address   Repeated Character
+ * Restrictions: A parameter error is posted when:
+ *  - The output data stream ends before the given number of bytes have been sent.
+ *  - The field length is equal to 0, if the field is not signed numeric.
+ *    If the field is signed numeric, either a 0 or a 1 causes an error.
+ *    Note: The length byte is ignored when an entry is modified in the format table.
+ *  - The address for the end of the field exceeds the end of the display.
+ *  - The input field addresses are not in ascending order. For input fields defined
+ *    by previous Write to Display commands, the input field address must be equal to
+ *    the starting address of an already specified field or greater than the last
+ *    field already defined.
+ *  - Too many input fields are defined for the display.
+ *  - Invalid screen attribute is specified.
+ *  - The defined input field overlays a previously defined field.
  *
- * This order displays a character in every position starting from the current display address and
- * going to the last position specified by this order. If these two addresses match, 1 character is
- * displayed.
- *
- * Restrictions:
- * A parameter error is posted when:
- * - there are fewer than 3 bytes after the order;
- * - there is a row address value either equal to 0 or greater than 12 for Model 2 (960 characters) or 24 for Model 12 (1920 characters); or
- * - there is a column address value greater than 80 or equal to O.
- * The order is also rejected if the specified ending address is less than the current display address.
- *
- * Note: Although any character can be repeated, avoid
- * using hex 11 (SBA), because this value is used as the delimiter between the fields sent in response to the Read MDT command.
- *
- * Results: The character is repeated from the current
- * display address through the ending display address specified. The current display address is then
- * updated to the value of the last position + 1.
- *
+
  */
-struct OrderRaRepeatToAddress : OrderBase {
-    uint8_t rowAddress;
-    uint8_t columnAddress;
+struct OrderSfStartField : OrderBase {
+    // 2-Byte field format words (optional)
+    uint8_t formatWord1;
+    uint8_t formatWord2;
+
+    // 2-Byte field control words (optional) 1 or more
+    std::vector<uint16_t> controlWords;
+
+    // Note: See the index entry screen attributes. Bits 0-2
+    // must be in the format B'001xxxxx' or an invalid
+    // screen attribute error is posted. All other bits are
+    // described in the screen attributes text.
+    uint8_t attributes;
+
+    uint16_t length;
+
     std::string repeatedCharacter;
 
     /**
@@ -75,16 +88,15 @@ struct OrderRaRepeatToAddress : OrderBase {
      * @param error Optional error string; unused for now (reserved for future validation).
      * @return A vector containing the encoded order.
      */
-    std::vector<uint8_t> marshal(std::string *error) const;
+    std::vector<uint8_t> marshal(std::string *error = nullptr) const;
 
     /**
      * Write a human-readable representation of the order to an output stream.
      *
      * Example:
-     *   <OrderRaRepeatToAddress>
+     *   <OrderSfStartField>
      *    │ rowAddress    : 0x01 (1)
      *    │ columnAddress : 0x02 (2)
-     *    │ repeatedCharacter : ["\u0080"]
      *    └───
      *
      * @param out    Output stream to write to.
@@ -92,4 +104,5 @@ struct OrderRaRepeatToAddress : OrderBase {
      */
     void describe(std::ostream &out, int indent) const;
 };
+
 } // namespace tn5250::message::command::order

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "decoder.h"
-#include "protocol_constants.h"
+#include "tn5250/protocol_constants.h"
 
 #include <algorithm>
 #include <cstdio>

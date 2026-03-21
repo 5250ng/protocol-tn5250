@@ -17,8 +17,8 @@
 #pragma once
 
 #include "../order_base.h"
-#include "utils/binary/binary.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/binary/binary.h"
+#include "tn5250/utils/hex/hex.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -26,45 +26,45 @@
 namespace tn5250::message::command::order {
 
 /**
- * Insert Cursor (IC) Order
+ * Set Buffer Address (SBA) Order
  *
  * @see IBM SA21-9247-6 - IBM 5250 Information Display System Functions Reference Manual
  *
  * Format:
  *
- * IC Order   Bytes 1 and 2           Bytes 3 to ?
+ * SBA Order   Bytes 1 and 2           Bytes 3 to ?
  *
- *       X'03'    Row Address   Column Address
+ *       X'11'    Row Address   Column Address   Repeated Character
  *
- * Function: This order sets the system insert cursor (IC) address to the location specified
- by the two bytes that follow the order when it is included in the Write to Display command
- or moves the cursor to the specified address without affecting the system IC address when
- it is included in Write Error Code command. Byte 1 gives the row address and byte 2 gives
- the column address. See the index entries home key and display, commands.
+ * Function:
+ *  - Read: Used as a delimiter between fields that are sent back to the host system in response to
+ *    the Read MDT command. See the index entry read MDT fields command.
+ *  - Write: Used to set the current display address and thereby determine where the data display or
+ *    field definition begins. Two bytes that follow this order tell the 5251 Models 2 or 12 this
+ *    information.
  *
- * Note: If there are more than one of these orders in the display station output data stream
- * (LU-LU commands from host system to controller for LU), only the last one is saved. It is
- * used as the home address (system IC address) for the Home function.
+ * Restrictions:
+ * A parameter error is posted when:
+ * - There are fewer than 2 bytes following the order.
+ * - The row address is equal to 0 or greater than 12 for Model 2 (960 characters) or 24 for Model
+ *    12 (1920 characters).
+ * - The column size is equal to 0 or greater than 80.
  *
- * Restrictions: A parameter error is posted when:
- * - There are fewer than two bytes following the order.
- * - The row address equals 0 or is greater than:
- *   - 24 for Model 12 (1920 characters) or
- *   - 12 for Model 2 (960 characters).
- * - The column address equals 0 or is greater than 80.
+ * Default: When the SBA is not specified in the Write to Display, the data starts at row 1, column 1
+ * because this is where the Write to Display command initializes it. See the index entry write to
+ * display command.
  *
- * Results: When the order is used in the Write to Display command, the cursor is not
- * immediately moved; the address is saved for later use. The cursor is moved when the entire
- * Write to Display is completed.
+ * Format:
  *
- * When the order is used in the Write Error Code command, the cursor is moved to the address
- * given in the IC order and does not affect the system IC address. The cursor exits the field
- * regardless of the type and does not perform any field checks. For example, it does not check
- * for a filled field for a field specified as mandatory fill.
+ * SBA Order   Bytes 1 and 2           Bytes 3 to ?
+ *
+ *       X'11'    Row Address   Column Address   Repeated Character
  */
-struct OrderIcInsertCursor : OrderBase {
+
+struct OrderSbaSetBufferAddress : OrderBase {
     uint8_t rowAddress;
     uint8_t columnAddress;
+    std::string repeatedCharacter;
 
     /**
      * Unmarshal the order from a byte buffer.
@@ -87,9 +87,10 @@ struct OrderIcInsertCursor : OrderBase {
      * Write a human-readable representation of the order to an output stream.
      *
      * Example:
-     *   <OrderIcInsertCursor>
+     *   <OrderSbaSetBufferAddress>
      *    │ rowAddress    : 0x01 (1)
      *    │ columnAddress : 0x02 (2)
+     *    │ repeatedCharacter : ["\u0080"]
      *    └───
      *
      * @param out    Output stream to write to.
@@ -97,5 +98,4 @@ struct OrderIcInsertCursor : OrderBase {
      */
     void describe(std::ostream &out, int indent) const;
 };
-
 } // namespace tn5250::message::command::order

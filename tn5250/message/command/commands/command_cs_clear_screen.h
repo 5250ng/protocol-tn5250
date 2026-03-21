@@ -18,8 +18,8 @@
 
 #include "../command_base.h"
 #include "../order/order.h"
-#include "utils/binary/binary.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/binary/binary.h"
+#include "tn5250/utils/hex/hex.h"
 #include <cstdint>
 #include <iostream>
 #include <list>
@@ -28,14 +28,7 @@
 
 namespace tn5250::message::command {
 
-struct CommandWtdWriteToDisplay : CommandBase {
-
-    uint8_t control1;
-    uint8_t control2;
-
-    CommandWtdWriteToDisplay() : control1(0), control2(0) {}
-    CommandWtdWriteToDisplay(uint8_t control1, uint8_t control2) : control1(control1), control2(control2) {}
-
+struct CommandCsClearScreen : CommandBase {
     /**
      * Unmarshal the command from a byte buffer.
      *

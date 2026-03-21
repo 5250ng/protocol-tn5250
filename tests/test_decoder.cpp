@@ -1,4 +1,4 @@
-#include <tn5250/decoder.h>
+#include <tn5250/client/decoder.h>
 #include <cassert>
 #include <cstdio>
 

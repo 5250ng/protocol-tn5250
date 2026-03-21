@@ -16,9 +16,11 @@
 
 #pragma once
 
-#include "command_code.h"
-#include "order/order.h"
-#include "utils/hex/hex.h"
+#include "../command_base.h"
+#include "../order/order.h"
+#include "tn5250/utils/binary/binary.h"
+#include "tn5250/utils/hex/hex.h"
+#include <cstdint>
 #include <iostream>
 #include <list>
 #include <string>
@@ -26,9 +28,13 @@
 
 namespace tn5250::message::command {
 
-struct CommandBase {
-    CommandCode code;
-    std::list<order::Order> orders;
+struct CommandWtdWriteToDisplay : CommandBase {
+
+    uint8_t control1;
+    uint8_t control2;
+
+    CommandWtdWriteToDisplay() : control1(0), control2(0) {}
+    CommandWtdWriteToDisplay(uint8_t control1, uint8_t control2) : control1(control1), control2(control2) {}
 
     /**
      * Unmarshal the command from a byte buffer.
@@ -37,7 +43,7 @@ struct CommandBase {
      * @param error  Optional error string; set on failure.
      * @return true on success; false on invalid length or malformed input.
      */
-    virtual uint32_t unmarshal(const std::vector<uint8_t> &buffer, std::string *error = nullptr) = 0;
+    uint32_t unmarshal(const std::vector<uint8_t> &buffer, std::string *error = nullptr);
 
     /**
      * Marshal the command to a byte buffer.
@@ -45,7 +51,7 @@ struct CommandBase {
      * @param error Optional error string; unused for now (reserved for future validation).
      * @return A vector containing the encoded command.
      */
-    virtual std::vector<uint8_t> marshal(std::string *error = nullptr) const = 0;
+    std::vector<uint8_t> marshal(std::string *error = nullptr) const;
 
     /**
      * Write a human-readable representation of the command to an output stream.
@@ -53,7 +59,7 @@ struct CommandBase {
      * @param out    Output stream to write to.
      * @param indent Indentation level for pretty-printing.
      */
-    virtual void describe(std::ostream &out, int indent) const = 0;
+    void describe(std::ostream &out, int indent) const;
 };
 
 } // namespace tn5250::message::command

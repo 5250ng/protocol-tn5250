@@ -17,9 +17,8 @@
 #pragma once
 
 #include "../order_base.h"
-#include "utils/binary/binary.h"
-#include "utils/endianness/little_endian.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/binary/binary.h"
+#include "tn5250/utils/hex/hex.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -27,51 +26,45 @@
 namespace tn5250::message::command::order {
 
 /**
- * Start Field (SF) Order
+ * Insert Cursor (IC) Order
  *
  * @see IBM SA21-9247-6 - IBM 5250 Information Display System Functions Reference Manual
  *
- * Function: This order defines input and output fields.
- * If an input field is being defined, it also resets any
- * pending aid byte and locks the keyboard.
+ * Format:
  *
- * Note: Although this order can be used for output
- * fields, it is not recommended because it degrades
- * performance. Use the SBA order instead.
+ * IC Order   Bytes 1 and 2           Bytes 3 to ?
+ *
+ *       X'03'    Row Address   Column Address
+ *
+ * Function: This order sets the system insert cursor (IC) address to the location specified
+ by the two bytes that follow the order when it is included in the Write to Display command
+ or moves the cursor to the specified address without affecting the system IC address when
+ it is included in Write Error Code command. Byte 1 gives the row address and byte 2 gives
+ the column address. See the index entries home key and display, commands.
+ *
+ * Note: If there are more than one of these orders in the display station output data stream
+ * (LU-LU commands from host system to controller for LU), only the last one is saved. It is
+ * used as the home address (system IC address) for the Home function.
  *
  * Restrictions: A parameter error is posted when:
- *  - The output data stream ends before the given number of bytes have been sent.
- *  - The field length is equal to 0, if the field is not signed numeric.
- *    If the field is signed numeric, either a 0 or a 1 causes an error.
- *    Note: The length byte is ignored when an entry is modified in the format table.
- *  - The address for the end of the field exceeds the end of the display.
- *  - The input field addresses are not in ascending order. For input fields defined
- *    by previous Write to Display commands, the input field address must be equal to
- *    the starting address of an already specified field or greater than the last
- *    field already defined.
- *  - Too many input fields are defined for the display.
- *  - Invalid screen attribute is specified.
- *  - The defined input field overlays a previously defined field.
+ * - There are fewer than two bytes following the order.
+ * - The row address equals 0 or is greater than:
+ *   - 24 for Model 12 (1920 characters) or
+ *   - 12 for Model 2 (960 characters).
+ * - The column address equals 0 or is greater than 80.
  *
-
+ * Results: When the order is used in the Write to Display command, the cursor is not
+ * immediately moved; the address is saved for later use. The cursor is moved when the entire
+ * Write to Display is completed.
+ *
+ * When the order is used in the Write Error Code command, the cursor is moved to the address
+ * given in the IC order and does not affect the system IC address. The cursor exits the field
+ * regardless of the type and does not perform any field checks. For example, it does not check
+ * for a filled field for a field specified as mandatory fill.
  */
-struct OrderSfStartField : OrderBase {
-    // 2-Byte field format words (optional)
-    uint8_t formatWord1;
-    uint8_t formatWord2;
-
-    // 2-Byte field control words (optional) 1 or more
-    std::vector<uint16_t> controlWords;
-
-    // Note: See the index entry screen attributes. Bits 0-2
-    // must be in the format B'001xxxxx' or an invalid
-    // screen attribute error is posted. All other bits are
-    // described in the screen attributes text.
-    uint8_t attributes;
-
-    uint16_t length;
-
-    std::string repeatedCharacter;
+struct OrderIcInsertCursor : OrderBase {
+    uint8_t rowAddress;
+    uint8_t columnAddress;
 
     /**
      * Unmarshal the order from a byte buffer.
@@ -94,7 +87,7 @@ struct OrderSfStartField : OrderBase {
      * Write a human-readable representation of the order to an output stream.
      *
      * Example:
-     *   <OrderSfStartField>
+     *   <OrderIcInsertCursor>
      *    │ rowAddress    : 0x01 (1)
      *    │ columnAddress : 0x02 (2)
      *    └───

@@ -17,8 +17,8 @@
 #pragma once
 
 #include "../order_base.h"
-#include "utils/binary/binary.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/binary/binary.h"
+#include "tn5250/utils/hex/hex.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -26,42 +26,36 @@
 namespace tn5250::message::command::order {
 
 /**
- * Set Buffer Address (SBA) Order
+ * Repeat to Address (RA) Order
  *
  * @see IBM SA21-9247-6 - IBM 5250 Information Display System Functions Reference Manual
  *
  * Format:
  *
- * SBA Order   Bytes 1 and 2           Bytes 3 to ?
+ * RA Order   Bytes 1 and 2           Bytes 3 to ?
  *
- *       X'11'    Row Address   Column Address   Repeated Character
+ *       X'02'    Row Address   Column Address   Repeated Character
  *
- * Function:
- *  - Read: Used as a delimiter between fields that are sent back to the host system in response to
- *    the Read MDT command. See the index entry read MDT fields command.
- *  - Write: Used to set the current display address and thereby determine where the data display or
- *    field definition begins. Two bytes that follow this order tell the 5251 Models 2 or 12 this
- *    information.
+ * This order displays a character in every position starting from the current display address and
+ * going to the last position specified by this order. If these two addresses match, 1 character is
+ * displayed.
  *
  * Restrictions:
  * A parameter error is posted when:
- * - There are fewer than 2 bytes following the order.
- * - The row address is equal to 0 or greater than 12 for Model 2 (960 characters) or 24 for Model
- *    12 (1920 characters).
- * - The column size is equal to 0 or greater than 80.
+ * - there are fewer than 3 bytes after the order;
+ * - there is a row address value either equal to 0 or greater than 12 for Model 2 (960 characters) or 24 for Model 12 (1920 characters); or
+ * - there is a column address value greater than 80 or equal to O.
+ * The order is also rejected if the specified ending address is less than the current display address.
  *
- * Default: When the SBA is not specified in the Write to Display, the data starts at row 1, column 1
- * because this is where the Write to Display command initializes it. See the index entry write to
- * display command.
+ * Note: Although any character can be repeated, avoid
+ * using hex 11 (SBA), because this value is used as the delimiter between the fields sent in response to the Read MDT command.
  *
- * Format:
+ * Results: The character is repeated from the current
+ * display address through the ending display address specified. The current display address is then
+ * updated to the value of the last position + 1.
  *
- * SBA Order   Bytes 1 and 2           Bytes 3 to ?
- *
- *       X'11'    Row Address   Column Address   Repeated Character
  */
-
-struct OrderSbaSetBufferAddress : OrderBase {
+struct OrderRaRepeatToAddress : OrderBase {
     uint8_t rowAddress;
     uint8_t columnAddress;
     std::string repeatedCharacter;
@@ -81,13 +75,13 @@ struct OrderSbaSetBufferAddress : OrderBase {
      * @param error Optional error string; unused for now (reserved for future validation).
      * @return A vector containing the encoded order.
      */
-    std::vector<uint8_t> marshal(std::string *error = nullptr) const;
+    std::vector<uint8_t> marshal(std::string *error) const;
 
     /**
      * Write a human-readable representation of the order to an output stream.
      *
      * Example:
-     *   <OrderSbaSetBufferAddress>
+     *   <OrderRaRepeatToAddress>
      *    │ rowAddress    : 0x01 (1)
      *    │ columnAddress : 0x02 (2)
      *    │ repeatedCharacter : ["\u0080"]

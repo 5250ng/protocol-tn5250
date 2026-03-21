@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "codepage/codepage.h"
+#include "tn5250/codepage/codepage.h"
 #include <cstdint>
 #include <string>
 #include <vector>

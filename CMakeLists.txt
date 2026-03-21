@@ -16,39 +16,39 @@ find_package(OpenSSL REQUIRED)
 # Collect sources
 set(TN5250_SOURCES
     # utils
-    src/utils/endianness/big_endian.cpp
-    src/utils/endianness/little_endian.cpp
-    src/utils/binary/binary.cpp
-    src/utils/hex/hex.cpp
+    tn5250/utils/endianness/big_endian.cpp
+    tn5250/utils/endianness/little_endian.cpp
+    tn5250/utils/binary/binary.cpp
+    tn5250/utils/hex/hex.cpp
     # codepage
-    src/codepage/codepage.cpp
+    tn5250/codepage/codepage.cpp
     # telnet
-    src/telnet/commands.cpp
-    src/telnet/options.cpp
-    src/telnet/client.cpp
+    tn5250/telnet/commands.cpp
+    tn5250/telnet/options.cpp
+    tn5250/telnet/client.cpp
     # devices
-    src/devices/devices.cpp
+    tn5250/devices/devices.cpp
     # client
-    src/client/ibmrseed.cpp
-    src/client/decoder.cpp
-    src/client/protocol_handler.cpp
+    tn5250/client/ibmrseed.cpp
+    tn5250/client/decoder.cpp
+    tn5250/client/protocol_handler.cpp
     # message
-    src/message/message.cpp
-    src/message/operation_code.cpp
-    src/message/header/header.cpp
-    src/message/header/record_type.cpp
-    src/message/command/command.cpp
-    src/message/command/command_code.cpp
-    src/message/command/commands/command_cs_clear_screen.cpp
-    src/message/command/commands/command_wtd_write_to_display.cpp
-    src/message/command/commands/command_rmf_read_mdt_fields.cpp
-    src/message/command/order/order.cpp
-    src/message/command/order/order_code.cpp
-    src/message/command/order/orders/order_ic_insert_cursor.cpp
-    src/message/command/order/orders/order_ra_repeat_to_address.cpp
-    src/message/command/order/orders/order_sba_set_buffer_address.cpp
-    src/message/command/order/orders/order_sf_start_field.cpp
-    src/message/command/order/orders/order_soh_start_of_header.cpp
+    tn5250/message/message.cpp
+    tn5250/message/operation_code.cpp
+    tn5250/message/header/header.cpp
+    tn5250/message/header/record_type.cpp
+    tn5250/message/command/command.cpp
+    tn5250/message/command/command_code.cpp
+    tn5250/message/command/commands/command_cs_clear_screen.cpp
+    tn5250/message/command/commands/command_wtd_write_to_display.cpp
+    tn5250/message/command/commands/command_rmf_read_mdt_fields.cpp
+    tn5250/message/command/order/order.cpp
+    tn5250/message/command/order/order_code.cpp
+    tn5250/message/command/order/orders/order_ic_insert_cursor.cpp
+    tn5250/message/command/order/orders/order_ra_repeat_to_address.cpp
+    tn5250/message/command/order/orders/order_sba_set_buffer_address.cpp
+    tn5250/message/command/order/orders/order_sf_start_field.cpp
+    tn5250/message/command/order/orders/order_soh_start_of_header.cpp
 )
 
 add_library(tn5250 STATIC ${TN5250_SOURCES})
@@ -56,7 +56,7 @@ add_library(tn5250::tn5250 ALIAS tn5250)
 
 target_include_directories(tn5250
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include>
 )
 

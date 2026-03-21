@@ -19,8 +19,8 @@
 #include "command/command.h"
 #include "header/header.h"
 #include "operation_code.h"
-#include "utils/endianness/big_endian.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/endianness/big_endian.h"
+#include "tn5250/utils/hex/hex.h"
 #include <algorithm>
 #include <cstdint>
 #include <list>

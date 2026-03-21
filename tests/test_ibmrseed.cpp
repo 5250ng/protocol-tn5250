@@ -1,4 +1,4 @@
-#include <tn5250/ibmrseed.h>
+#include <tn5250/client/ibmrseed.h>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>

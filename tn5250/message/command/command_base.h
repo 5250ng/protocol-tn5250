@@ -16,11 +16,9 @@
 
 #pragma once
 
-#include "../command_base.h"
-#include "../order/order.h"
-#include "utils/binary/binary.h"
-#include "utils/hex/hex.h"
-#include <cstdint>
+#include "command_code.h"
+#include "order/order.h"
+#include "tn5250/utils/hex/hex.h"
 #include <iostream>
 #include <list>
 #include <string>
@@ -28,13 +26,9 @@
 
 namespace tn5250::message::command {
 
-struct CommandRmfReadMdtFields : CommandBase {
-
-    uint8_t control1;
-    uint8_t control2;
-
-    CommandRmfReadMdtFields() : control1(0), control2(0) {}
-    CommandRmfReadMdtFields(uint8_t control1, uint8_t control2) : control1(control1), control2(control2) {}
+struct CommandBase {
+    CommandCode code;
+    std::list<order::Order> orders;
 
     /**
      * Unmarshal the command from a byte buffer.
@@ -43,7 +37,7 @@ struct CommandRmfReadMdtFields : CommandBase {
      * @param error  Optional error string; set on failure.
      * @return true on success; false on invalid length or malformed input.
      */
-    uint32_t unmarshal(const std::vector<uint8_t> &buffer, std::string *error = nullptr);
+    virtual uint32_t unmarshal(const std::vector<uint8_t> &buffer, std::string *error = nullptr) = 0;
 
     /**
      * Marshal the command to a byte buffer.
@@ -51,7 +45,7 @@ struct CommandRmfReadMdtFields : CommandBase {
      * @param error Optional error string; unused for now (reserved for future validation).
      * @return A vector containing the encoded command.
      */
-    std::vector<uint8_t> marshal(std::string *error = nullptr) const;
+    virtual std::vector<uint8_t> marshal(std::string *error = nullptr) const = 0;
 
     /**
      * Write a human-readable representation of the command to an output stream.
@@ -59,7 +53,7 @@ struct CommandRmfReadMdtFields : CommandBase {
      * @param out    Output stream to write to.
      * @param indent Indentation level for pretty-printing.
      */
-    void describe(std::ostream &out, int indent) const;
+    virtual void describe(std::ostream &out, int indent) const = 0;
 };
 
 } // namespace tn5250::message::command

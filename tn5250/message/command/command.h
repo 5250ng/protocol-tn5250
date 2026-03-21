@@ -17,7 +17,7 @@
 #pragma once
 
 #include "command_code.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/hex/hex.h"
 #include <cstdint>
 #include <string>
 #include <variant>

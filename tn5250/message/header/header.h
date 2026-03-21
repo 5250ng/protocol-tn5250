@@ -17,9 +17,9 @@
 #pragma once
 
 #include "record_type.h"
-#include "utils/binary/binary.h"
-#include "utils/endianness/big_endian.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/binary/binary.h"
+#include "tn5250/utils/endianness/big_endian.h"
+#include "tn5250/utils/hex/hex.h"
 #include <algorithm>
 #include <cstdint>
 #include <ostream>

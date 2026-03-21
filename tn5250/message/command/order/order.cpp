@@ -15,7 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "order.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/hex/hex.h"
 #include <string>
 #include <vector>
 

@@ -16,9 +16,9 @@
 
 #pragma once
 
-#include "codepage/codepage.h"
-#include "telnet/commands.h"
-#include "telnet/options.h"
+#include "tn5250/codepage/codepage.h"
+#include "tn5250/telnet/commands.h"
+#include "tn5250/telnet/options.h"
 #include <cstdint>
 #include <functional>
 #include <string>

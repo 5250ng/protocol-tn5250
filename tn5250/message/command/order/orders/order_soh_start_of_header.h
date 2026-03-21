@@ -17,9 +17,9 @@
 #pragma once
 
 #include "../order_base.h"
-#include "utils/binary/binary.h"
-#include "utils/endianness/little_endian.h"
-#include "utils/hex/hex.h"
+#include "tn5250/utils/binary/binary.h"
+#include "tn5250/utils/endianness/little_endian.h"
+#include "tn5250/utils/hex/hex.h"
 #include <iostream>
 #include <string>
 #include <vector>

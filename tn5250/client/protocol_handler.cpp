@@ -16,9 +16,9 @@
 
 #include "protocol_handler.h"
 #include "ibmrseed.h"
-#include "protocol_constants.h"
-#include "telnet/commands.h"
-#include "telnet/options.h"
+#include "tn5250/protocol_constants.h"
+#include "tn5250/telnet/commands.h"
+#include "tn5250/telnet/options.h"
 
 #include <cstdio>
 #include <cstring>
