@@ -251,20 +251,20 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                                 continue;
                             }
                             if (ob == ORDER_SF) {
+                                // SF order: 0x1D [FFW1] [FFW2] [FCW pairs...] [attr] [len_hi] [len_lo]
+                                // The 2-byte length specifies the field size on screen,
+                                // NOT a count of trailing data bytes in the stream.
                                 int k = j + 1;
-                                if (k + 1 < static_cast<int>(payload.size())) k += 2;
+                                if (k + 1 < static_cast<int>(payload.size())) k += 2; // FFW1+FFW2
                                 else { k = payload.size(); }
                                 while (k + 1 < static_cast<int>(payload.size()) &&
                                        (payload[k] & 0xE0) != 0x20) {
-                                    k += 2;
+                                    k += 2; // skip FCW pairs
                                 }
-                                if (k < static_cast<int>(payload.size())) k++;
-                                int fieldLen = 0;
+                                if (k < static_cast<int>(payload.size())) k++; // attr byte
                                 if (k + 1 < static_cast<int>(payload.size())) {
-                                    fieldLen = (static_cast<int>(payload[k]) << 8) | static_cast<int>(payload[k + 1]);
-                                    k += 2;
+                                    k += 2; // 2-byte field length (screen positions, not data bytes)
                                 }
-                                k += fieldLen;
                                 if (k > static_cast<int>(payload.size())) k = payload.size();
                                 int n = k - j;
                                 display.insert(display.end(), payload.begin() + j, payload.begin() + j + n);
