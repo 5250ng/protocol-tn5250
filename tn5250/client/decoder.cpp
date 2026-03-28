@@ -79,7 +79,8 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
 
         if (opcode == GDS_OPCODE_SAVE_SCREEN) {
             if (m_callbacks.onSaveScreen) m_callbacks.onSaveScreen();
-            continue;
+            // Fall through to process payload commands (e.g. Clear Unit, Write To Display)
+            // which may unlock the keyboard or update the screen.
         }
         if (opcode == GDS_OPCODE_INVITE) {
             if (m_callbacks.onInvite) m_callbacks.onInvite();
@@ -98,7 +99,7 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
             continue;
         }
 
-        if (opcode == GDS_OPCODE_OUTPUT_ONLY || opcode == GDS_OPCODE_PUT_GET || opcode == GDS_OPCODE_RESTORE) {
+        if (opcode == GDS_OPCODE_OUTPUT_ONLY || opcode == GDS_OPCODE_PUT_GET || opcode == GDS_OPCODE_RESTORE || opcode == GDS_OPCODE_SAVE_SCREEN) {
             std::vector<uint8_t> display;
             for (int i = 0; i < static_cast<int>(payload.size());) {
                 uint8_t ch = payload[i];
@@ -297,9 +298,11 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                 display.push_back(ch);
                 i++;
             }
-            if (!display.empty()) {
-                if (m_callbacks.onRawScreenData) m_callbacks.onRawScreenData(display);
-            }
+            // Always emit raw screen data (even when empty) so that
+            // deferred CC2 processing is triggered in the command handler.
+            // A WTD with CC2 unlock bit but no display orders would otherwise
+            // leave the keyboard permanently locked.
+            if (m_callbacks.onRawScreenData) m_callbacks.onRawScreenData(display);
             continue;
         }
     }
