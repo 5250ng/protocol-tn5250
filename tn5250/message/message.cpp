@@ -38,7 +38,7 @@ uint32_t Message::unmarshal(const std::vector<uint8_t> &buffer, std::string *err
     read_bytes++;
 
     // Verify we have enough bytes for variable header
-    const int needed = read_bytes + static_cast<int>(variableLength);
+    const size_t needed = static_cast<size_t>(read_bytes) + variableLength;
     if (buffer.size() < needed) {
         if (error)
             *error = "5250Message: buffer too short for variable header";
