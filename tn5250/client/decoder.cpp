@@ -99,7 +99,7 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
             continue;
         }
 
-        if (opcode == GDS_OPCODE_OUTPUT_ONLY || opcode == GDS_OPCODE_PUT_GET || opcode == GDS_OPCODE_RESTORE || opcode == GDS_OPCODE_SAVE_SCREEN) {
+        if (opcode == GDS_OPCODE_OUTPUT_ONLY || opcode == GDS_OPCODE_PUT_GET || opcode == GDS_OPCODE_RESTORE || opcode == GDS_OPCODE_SAVE_SCREEN || opcode == GDS_OPCODE_READ_SCREEN) {
             std::vector<uint8_t> display;
             for (int i = 0; i < static_cast<int>(payload.size());) {
                 uint8_t ch = payload[i];
