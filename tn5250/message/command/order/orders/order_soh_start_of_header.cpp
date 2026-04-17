@@ -26,7 +26,9 @@ namespace tn5250::message::command::order {
  * @return bytes read on success; 0 on failure.
  */
 uint32_t OrderSohStartOfHeader::unmarshal(const std::vector<uint8_t> &buffer, std::string *error) {
-    if (buffer.size() < 3) {
+    // SOH order format: 0x01 + length + flags + flagsReserved +
+    // resequenceToField + errorRow + commandKeySwitch1..3 (9 bytes total).
+    if (buffer.size() < 9) {
         if (error)
             *error = "OrderSohStartOfHeader: buffer too short for order code and attributes";
         return 0;
@@ -51,7 +53,7 @@ uint32_t OrderSohStartOfHeader::unmarshal(const std::vector<uint8_t> &buffer, st
     flagsReserved = buffer[read_bytes];
     read_bytes++;
 
-    resequenceToField = buffer[4];
+    resequenceToField = buffer[read_bytes];
     read_bytes++;
 
     errorRow = buffer[read_bytes];
