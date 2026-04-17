@@ -83,9 +83,11 @@ uint32_t OrderSfStartField::unmarshal(const std::vector<uint8_t> &buffer, std::s
     length = (static_cast<uint16_t>(buffer[read_bytes]) << 8) | static_cast<uint16_t>(buffer[read_bytes + 1]);
     read_bytes += 2;
 
-    // Field data (length bytes)
+    // Field data (length bytes). `length` is a uint16_t, so the counter must
+    // be at least as wide; a uint8_t counter wraps back to 0 at i==256 and
+    // the loop keeps consuming bytes past the intended end of the field.
     repeatedCharacter.clear();
-    for (uint8_t i = 0; i < length; i++) {
+    for (uint16_t i = 0; i < length; i++) {
         if (read_bytes >= buffer.size()) break;
         repeatedCharacter.push_back(static_cast<char>(buffer[read_bytes]));
         read_bytes++;
