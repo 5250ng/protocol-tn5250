@@ -33,6 +33,14 @@ uint32_t Message::unmarshal(const std::vector<uint8_t> &buffer, std::string *err
         return 0;
     }
 
+    // The fixed header guard only proves read_bytes bytes are present.
+    // Guarantee the variableLength byte is also present before reading it.
+    if (read_bytes >= buffer.size()) {
+        if (error)
+            *error = "5250Message: buffer too short for variable-length byte";
+        return 0;
+    }
+
     // Unmarshal the variable header
     variableLength = static_cast<uint8_t>(buffer[read_bytes]);
     read_bytes++;
