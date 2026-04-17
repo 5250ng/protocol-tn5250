@@ -26,7 +26,7 @@ namespace tn5250::message::command::order {
  * @return bytes read on success; 0 on failure.
  */
 uint32_t OrderRaRepeatToAddress::unmarshal(const std::vector<uint8_t> &buffer, std::string *error) {
-    if (buffer.size() < 3) {
+    if (buffer.size() < 4) {
         if (error)
             *error = "OrderRaRepeatToAddress: buffer too short for order code and attributes";
         return 0;
