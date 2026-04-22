@@ -71,11 +71,6 @@ uint32_t CommandWtdWriteToDisplay::unmarshal(const std::vector<uint8_t> &buffer,
             }
             return 0;
         }
-        std::cout << "unmarshalling order(s) at offset " << read_bytes << std::endl;
-        for (const auto &line : utils::hex::hexdump(sub)) {
-            std::cout << line << std::endl;
-            break;
-        }
         std::vector<order::Order> parsedOrders = order::unmarshalOrders(sub, error);
         if (parsedOrders.empty() && !sub.empty()) {
             // Failure parsing orders
