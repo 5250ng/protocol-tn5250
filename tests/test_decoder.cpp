@@ -1,6 +1,7 @@
 #include <tn5250/client/decoder.h>
 #include <cassert>
 #include <cstdio>
+#include <string>
 
 using namespace tn5250::client;
 
@@ -133,6 +134,81 @@ void testMultipleCommands() {
     std::printf("PASS: testMultipleCommands\n");
 }
 
+// Regression test for protocol-tn5250#12 / 5250ng#103: a WSF whose data
+// contains an embedded 0x04 byte was previously truncated at that byte by the
+// scan-for-ESC heuristic. With the length-prefixed walk, the SF body is taken
+// from its 2-byte big-endian length and the 0x04 byte is preserved verbatim.
+void testWsfLengthPrefixHonoursEmbeddedEsc() {
+    std::vector<uint8_t> sfData;
+    DecoderCallbacks cb;
+    cb.onWriteStructuredField = [&](const std::vector<uint8_t> &d) { sfData = d; };
+
+    Decoder decoder(cb);
+    // Single SF: length=0x0008, class=0xD9, type=0x70, body has an embedded 0x04
+    std::vector<uint8_t> wsf = {0x04, 0xF3, 0x00, 0x08, 0xD9, 0x70, 0xAA, 0x04, 0xBB};
+    auto gds = makeGDS(0x02, wsf);
+    decoder.parseData(gds);
+
+    // The callback receives the SF bytes including length and class/type.
+    assert(sfData.size() == 8);
+    assert(sfData[0] == 0x00 && sfData[1] == 0x08);
+    assert(sfData[2] == 0xD9 && sfData[3] == 0x70);
+    assert(sfData[6] == 0x04);  // embedded ESC byte kept verbatim
+    assert(sfData[7] == 0xBB);
+    std::printf("PASS: testWsfLengthPrefixHonoursEmbeddedEsc\n");
+}
+
+// Regression test for protocol-tn5250#12 / 5250ng#103: an unknown ESC command
+// code used to advance only 2 bytes, leaving the unknown command's payload to
+// fall through into the display vector and corrupt the rendered screen via the
+// raw-screen-data callback. The decoder must now resync to the next ESC and
+// must not emit any raw screen data for the leaked bytes.
+void testUnknownEscCommandDoesNotLeakIntoRawData() {
+    bool gotRawData = false;
+    std::string lastError;
+    DecoderCallbacks cb;
+    cb.onRawScreenData = [&](const std::vector<uint8_t> &d) {
+        if (!d.empty()) gotRawData = true;
+    };
+    cb.onParseError = [&](const std::string &err) { lastError = err; };
+
+    Decoder decoder(cb);
+    // Payload: ESC + unknown CC 0x6E + bogus payload bytes that include 5250
+    // order codes (0x11 SBA, 0x03 EA) which the renderer would otherwise treat
+    // as orders if they leaked through.
+    std::vector<uint8_t> payload = {0x04, 0x6E, 0xD9, 0x36, 0x00, 0x11, 0x03, 0x00};
+    auto gds = makeGDS(0x02, payload);
+    decoder.parseData(gds);
+
+    assert(!gotRawData);
+    assert(lastError.find("unknown ESC command") != std::string::npos);
+    std::printf("PASS: testUnknownEscCommandDoesNotLeakIntoRawData\n");
+}
+
+// Regression test for protocol-tn5250#12 / 5250ng#103: the per-byte loop used
+// to push any non-ESC, non-SOH byte at the outer level into the display vector
+// and emit it as raw screen data. Bytes outside any recognised command are now
+// reported as parse errors and dropped.
+void testStrayBytesAreNotEmittedAsRawScreenData() {
+    bool gotRawData = false;
+    std::string lastError;
+    DecoderCallbacks cb;
+    cb.onRawScreenData = [&](const std::vector<uint8_t> &d) {
+        if (!d.empty()) gotRawData = true;
+    };
+    cb.onParseError = [&](const std::string &err) { lastError = err; };
+
+    Decoder decoder(cb);
+    // Payload starts with a stray non-ESC, non-SOH byte before any command.
+    std::vector<uint8_t> payload = {0xD9, 0x36, 0x04, 0x40};
+    auto gds = makeGDS(0x02, payload);
+    decoder.parseData(gds);
+
+    assert(!gotRawData);
+    assert(lastError.find("stray byte") != std::string::npos);
+    std::printf("PASS: testStrayBytesAreNotEmittedAsRawScreenData\n");
+}
+
 int main() {
     testReset();
     testCommandWithData();
@@ -140,6 +216,9 @@ int main() {
     testInvalidVarLen();
     testStateTransitions();
     testMultipleCommands();
+    testWsfLengthPrefixHonoursEmbeddedEsc();
+    testUnknownEscCommandDoesNotLeakIntoRawData();
+    testStrayBytesAreNotEmittedAsRawScreenData();
     std::printf("All Decoder tests passed.\n");
     return 0;
 }

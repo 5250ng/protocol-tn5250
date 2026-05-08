@@ -182,14 +182,33 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                         i += 4; continue;
                     }
                     if (cc == CC_WRITE_STRUCTURED_FIELD) {
+                        // RFC 1205 §12.5.1: a WSF stream contains one or more
+                        // structured fields, each prefixed with a big-endian
+                        // 2-byte length covering the entire SF (length + class
+                        // + type + data). SF data is binary and may contain
+                        // 0x04 bytes, so we must not use ESC as a terminator.
+                        // Walk every SF using its length, stop at the next ESC
+                        // (start of another command) or end of payload, and
+                        // hand the raw SF bytes to the caller.
                         int j = i + 2;
-                        std::vector<uint8_t> sfData;
-                        while (j < static_cast<int>(payload.size())) {
+                        const int wsfStart = j;
+                        while (j + 1 < static_cast<int>(payload.size())) {
                             if (payload[j] == ESC) break;
-                            sfData.push_back(payload[j]);
-                            j++;
+                            const int sfLen = (static_cast<int>(payload[j]) << 8) |
+                                              static_cast<int>(payload[j + 1]);
+                            if (sfLen < 2 || j + sfLen > static_cast<int>(payload.size())) {
+                                if (m_callbacks.onParseError)
+                                    m_callbacks.onParseError("TN5250: WSF structured-field length out of range");
+                                j = payload.size();
+                                break;
+                            }
+                            j += sfLen;
                         }
-                        if (m_callbacks.onWriteStructuredField) m_callbacks.onWriteStructuredField(sfData);
+                        if (m_callbacks.onWriteStructuredField) {
+                            std::vector<uint8_t> sfData(payload.begin() + wsfStart,
+                                                        payload.begin() + j);
+                            m_callbacks.onWriteStructuredField(sfData);
+                        }
                         i = j; continue;
                     }
                     if (cc == CC_WRITE_TO_DISPLAY) {
@@ -277,8 +296,25 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                         i = j;
                         continue;
                     }
-                    // Unknown ESC command
-                    i += 2;
+                    // Unknown ESC command. We do not know its payload length,
+                    // so resync by advancing to the next ESC byte (start of
+                    // another command) or to the end of the payload. This
+                    // avoids leaking the unknown command's payload bytes into
+                    // the display vector via the loose-byte fallthrough below,
+                    // which would otherwise be re-parsed as 5250 orders by the
+                    // downstream renderer and corrupt the screen.
+                    if (m_callbacks.onParseError) {
+                        char buf[64];
+                        std::snprintf(buf, sizeof(buf),
+                                      "TN5250: unknown ESC command 0x%02X", cc);
+                        m_callbacks.onParseError(buf);
+                    }
+                    int k = i + 2;
+                    while (k < static_cast<int>(payload.size()) &&
+                           payload[k] != ESC) {
+                        k++;
+                    }
+                    i = k;
                     continue;
                 }
                 if (ch == SOH) {
@@ -295,7 +331,18 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                     if (i > static_cast<int>(payload.size())) i = payload.size();
                     continue;
                 }
-                display.push_back(ch);
+                // A non-ESC, non-SOH byte at this level is not part of any
+                // recognised command — display data lives inside the WTD/WEC
+                // inner loops, not at the top level. Skip the byte rather than
+                // emitting it as raw screen data, which would be re-parsed as
+                // 5250 orders and corrupt the rendered screen.
+                if (m_callbacks.onParseError) {
+                    char buf[64];
+                    std::snprintf(buf, sizeof(buf),
+                                  "TN5250: stray byte 0x%02X outside any command",
+                                  static_cast<unsigned>(ch));
+                    m_callbacks.onParseError(buf);
+                }
                 i++;
             }
             // Always emit raw screen data (even when empty) so that
