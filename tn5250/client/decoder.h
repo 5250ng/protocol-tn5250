@@ -72,6 +72,13 @@ struct DecoderCallbacks {
     std::function<void()> onMessageLightOff;
     std::function<void(bool)> onReadScreen;
     std::function<void(const std::vector<uint8_t> &)> onWriteStructuredField;
+    // Fires when a Write-To-Display stream contains the STRPCCMD trigger byte
+    // (0x80) followed by the fixed 9-byte PCO signature. The decoder consumes
+    // and removes the 10-byte marker from the rendered display data so it does
+    // not leak into onRawScreenData. The actual command string is not parsed
+    // here — it lives at fixed screen coordinates the host writes via normal
+    // SBA + text orders, and the consumer reads it off the rendered screen.
+    std::function<void()> onStrpccmdRequested;
     std::function<void(const std::string &)> onParseError;
     std::function<void(const std::string &)> onLog;
 };
