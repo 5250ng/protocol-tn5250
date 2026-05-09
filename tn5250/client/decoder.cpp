@@ -270,6 +270,22 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                                 }
                                 continue;
                             }
+                            if (ob == STRPCCMD_TRIGGER &&
+                                j + STRPCCMD_MARKER_LEN <= static_cast<int>(payload.size()) &&
+                                std::equal(STRPCCMD_SIGNATURE,
+                                           STRPCCMD_SIGNATURE + sizeof(STRPCCMD_SIGNATURE),
+                                           payload.begin() + j + 1)) {
+                                // STRPCCMD marker: 0x80 trigger + 9-byte PCO
+                                // signature. Consume the 10 bytes so they do
+                                // not render as garbage, then notify the
+                                // consumer. The command string itself lives at
+                                // screen positions 11.. written by normal SBA +
+                                // text orders earlier in this same WTD, and is
+                                // the consumer's responsibility to extract.
+                                if (m_callbacks.onStrpccmdRequested) m_callbacks.onStrpccmdRequested();
+                                j += STRPCCMD_MARKER_LEN;
+                                continue;
+                            }
                             if (ob == ORDER_SF) {
                                 // SF order: 0x1D [FFW1] [FFW2] [FCW pairs...] [attr] [len_hi] [len_lo]
                                 // The 2-byte length specifies the field size on screen,

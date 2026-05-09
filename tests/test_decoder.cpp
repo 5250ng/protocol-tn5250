@@ -209,6 +209,81 @@ void testStrayBytesAreNotEmittedAsRawScreenData() {
     std::printf("PASS: testStrayBytesAreNotEmittedAsRawScreenData\n");
 }
 
+// STRPCCMD marker detection: a WTD stream that contains the trigger byte 0x80
+// followed by the fixed 9-byte PCO signature must fire onStrpccmdRequested
+// exactly once and must remove the 10 marker bytes from the rendered display
+// data so they do not render as garbage on screen.
+void testStrpccmdMarkerFiresCallbackAndIsStrippedFromDisplay() {
+    int strpccmdCount = 0;
+    std::vector<uint8_t> rawData;
+    DecoderCallbacks cb;
+    cb.onStrpccmdRequested = [&]() { strpccmdCount++; };
+    cb.onRawScreenData = [&](const std::vector<uint8_t> &d) { rawData = d; };
+
+    Decoder decoder(cb);
+    // WTD payload: a printable EBCDIC byte, then the 10-byte STRPCCMD marker
+    // (trigger + 9-byte signature), then another printable byte. Only the two
+    // printable bytes should reach the rendered display; the marker is
+    // consumed silently.
+    std::vector<uint8_t> displayData = {
+        0xC1,
+        0x80, 0xFC, 0xD7, 0xC3, 0xD6, 0x40, 0x83, 0x80, 0xA1, 0x80,
+        0xC2
+    };
+    auto gds = makeGDS(0x02, makeWTDPayload(displayData));
+    decoder.parseData(gds);
+
+    assert(strpccmdCount == 1);
+    assert(rawData.size() == 2);
+    assert(rawData[0] == 0xC1);
+    assert(rawData[1] == 0xC2);
+    std::printf("PASS: testStrpccmdMarkerFiresCallbackAndIsStrippedFromDisplay\n");
+}
+
+// A 0x80 byte that is NOT followed by the exact 9-byte PCO signature must be
+// treated as an ordinary (non-printable) byte: no callback, no consumption of
+// trailing bytes. This guards against accidentally swallowing 9 bytes of
+// legitimate data on signature mismatch.
+void testStrpccmdMismatchedSignatureDoesNotFire() {
+    int strpccmdCount = 0;
+    std::vector<uint8_t> rawData;
+    DecoderCallbacks cb;
+    cb.onStrpccmdRequested = [&]() { strpccmdCount++; };
+    cb.onRawScreenData = [&](const std::vector<uint8_t> &d) { rawData = d; };
+
+    Decoder decoder(cb);
+    // 0x80 followed by 9 bytes that do NOT match the signature (one byte is
+    // wrong). The decoder must not fire the callback, and the trailing bytes
+    // must remain in the rendered display data.
+    std::vector<uint8_t> displayData = {
+        0x80, 0xFC, 0xD7, 0xC3, 0xD6, 0x40, 0x83, 0x80, 0xA1, 0x00,
+        0xC2
+    };
+    auto gds = makeGDS(0x02, makeWTDPayload(displayData));
+    decoder.parseData(gds);
+
+    assert(strpccmdCount == 0);
+    assert(rawData.size() == 11);
+    std::printf("PASS: testStrpccmdMismatchedSignatureDoesNotFire\n");
+}
+
+// A truncated marker (trigger byte at end of WTD, fewer than 9 bytes
+// remaining) must not crash and must not fire the callback.
+void testStrpccmdTruncatedSignatureIsSafe() {
+    int strpccmdCount = 0;
+    DecoderCallbacks cb;
+    cb.onStrpccmdRequested = [&]() { strpccmdCount++; };
+
+    Decoder decoder(cb);
+    // 0x80 with only 4 bytes of would-be signature available.
+    std::vector<uint8_t> displayData = {0x80, 0xFC, 0xD7, 0xC3, 0xD6};
+    auto gds = makeGDS(0x02, makeWTDPayload(displayData));
+    decoder.parseData(gds);
+
+    assert(strpccmdCount == 0);
+    std::printf("PASS: testStrpccmdTruncatedSignatureIsSafe\n");
+}
+
 int main() {
     testReset();
     testCommandWithData();
@@ -219,6 +294,9 @@ int main() {
     testWsfLengthPrefixHonoursEmbeddedEsc();
     testUnknownEscCommandDoesNotLeakIntoRawData();
     testStrayBytesAreNotEmittedAsRawScreenData();
+    testStrpccmdMarkerFiresCallbackAndIsStrippedFromDisplay();
+    testStrpccmdMismatchedSignatureDoesNotFire();
+    testStrpccmdTruncatedSignatureIsSafe();
     std::printf("All Decoder tests passed.\n");
     return 0;
 }

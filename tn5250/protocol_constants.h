@@ -89,4 +89,16 @@ constexpr int DEFAULT_SCREEN_COLS = 80;
 // EBCDIC constants
 constexpr uint8_t EBCDIC_SPACE = 0x40;
 
+// STRPCCMD (Start PC Command) marker. IBM i hosts signal a request to run a
+// command on the connected PC by emitting this trigger byte inside a Write-To-
+// Display data stream, immediately followed by a fixed 9-byte signature that
+// tn5250j matches against. The marker as a whole is 10 bytes; the command
+// string itself lives at fixed screen coordinates (positions 11..) written via
+// normal SBA + text orders earlier in the same WTD.
+constexpr uint8_t STRPCCMD_TRIGGER = 0x80;
+constexpr uint8_t STRPCCMD_SIGNATURE[9] = {
+    0xFC, 0xD7, 0xC3, 0xD6, 0x40, 0x83, 0x80, 0xA1, 0x80
+};
+constexpr int STRPCCMD_MARKER_LEN = 1 + 9;
+
 } // namespace tn5250::protocol
