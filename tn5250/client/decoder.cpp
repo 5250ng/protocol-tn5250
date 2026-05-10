@@ -296,10 +296,21 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                                     // consumer can decide how to handle that.
                                     noWait = (payload[p] == 0x81);
                                     p++;
+                                    // Read up to STRPCCMD_MAX_COMMAND_LEN
+                                    // bytes, but stop at the first byte < 0x40.
+                                    // Printable EBCDIC always lies in 0x40..0xFE;
+                                    // any byte below that boundary is either an
+                                    // EBCDIC control character or the first byte
+                                    // of the next 5250 order (e.g. RA = 0x02,
+                                    // SBA = 0x11, SF = 0x1D). OS/400 V4R5 and
+                                    // V5R4 do not pad the PCCMD region — they
+                                    // write the next order immediately after the
+                                    // command — so the 0x40 floor is the only
+                                    // reliable end-of-command signal.
                                     const int payloadEnd =
                                         std::min(p + STRPCCMD_MAX_COMMAND_LEN,
                                                  static_cast<int>(payload.size()));
-                                    while (p < payloadEnd && payload[p] != ESC) {
+                                    while (p < payloadEnd && payload[p] >= 0x40) {
                                         commandBytes.push_back(payload[p]);
                                         p++;
                                     }

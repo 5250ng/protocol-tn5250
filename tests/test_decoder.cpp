@@ -279,6 +279,40 @@ void testStrpccmdNoWaitFlagIsReported() {
     std::printf("PASS: testStrpccmdNoWaitFlagIsReported\n");
 }
 
+// Any byte < 0x40 in the command region terminates extraction. OS/400 V4R5
+// and V5R4 do not pad PCCMD to 123 bytes — they write the next 5250 order
+// (typically RA = 0x02) immediately after the command. Without this floor
+// the decoder reads the order header into the command bytes and produces
+// commands like "echo v4r5-fix-test  7" instead of "echo v4r5-fix-test".
+void testStrpccmdStopsAtControlByteFloor() {
+    std::vector<uint8_t> gotCommand;
+    DecoderCallbacks cb;
+    cb.onStrpccmdRequested = [&](bool, const std::vector<uint8_t> &cmd) {
+        gotCommand = cmd;
+    };
+
+    Decoder decoder(cb);
+    // Marker, wait flag, four EBCDIC command bytes "echo", then an RA order
+    // (0x02 0x02 0x37 0x00) sitting where padding would be on a host that
+    // pads with EBCDIC blanks. Only the four command bytes should be in
+    // gotCommand — the RA bytes must not leak through.
+    std::vector<uint8_t> displayData = {
+        0x80, 0xFC, 0xD7, 0xC3, 0xD6, 0x40, 0x83, 0x80, 0xA1, 0x80,
+        0x82,
+        0x85, 0x83, 0x88, 0x96,
+        0x02, 0x02, 0x37, 0x00
+    };
+    auto gds = makeGDS(0x02, makeWTDPayload(displayData));
+    decoder.parseData(gds);
+
+    assert(gotCommand.size() == 4);
+    assert(gotCommand[0] == 0x85);
+    assert(gotCommand[1] == 0x83);
+    assert(gotCommand[2] == 0x88);
+    assert(gotCommand[3] == 0x96);
+    std::printf("PASS: testStrpccmdStopsAtControlByteFloor\n");
+}
+
 // An ESC byte appearing immediately after the marker (or inside the command
 // region) terminates command extraction — it marks the start of the next 5250
 // command, not part of the STRPCCMD payload.
@@ -375,6 +409,7 @@ int main() {
     testStrayBytesAreNotEmittedAsRawScreenData();
     testStrpccmdMarkerFiresCallbackAndIsStrippedFromDisplay();
     testStrpccmdNoWaitFlagIsReported();
+    testStrpccmdStopsAtControlByteFloor();
     testStrpccmdEscAfterMarkerStopsExtraction();
     testStrpccmdMismatchedSignatureDoesNotFire();
     testStrpccmdTruncatedSignatureIsSafe();
