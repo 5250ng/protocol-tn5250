@@ -73,12 +73,16 @@ struct DecoderCallbacks {
     std::function<void(bool)> onReadScreen;
     std::function<void(const std::vector<uint8_t> &)> onWriteStructuredField;
     // Fires when a Write-To-Display stream contains the STRPCCMD trigger byte
-    // (0x80) followed by the fixed 9-byte PCO signature. The decoder consumes
-    // and removes the 10-byte marker from the rendered display data so it does
-    // not leak into onRawScreenData. The actual command string is not parsed
-    // here — it lives at fixed screen coordinates the host writes via normal
-    // SBA + text orders, and the consumer reads it off the rendered screen.
-    std::function<void()> onStrpccmdRequested;
+    // (0x80) followed by the fixed 9-byte PCO signature. After the 10-byte
+    // marker the host writes a 1-byte wait flag (EBCDIC 'a' = 0x81 → no-wait,
+    // anything else → wait) and up to 123 EBCDIC bytes of command, padded with
+    // EBCDIC blanks (0x40). The decoder consumes the marker and that trailing
+    // payload — capped at 124 bytes or stopped at the next ESC byte — and
+    // hands the wait flag and the raw EBCDIC command bytes to the consumer.
+    // Codepage conversion and trimming are the consumer's responsibility so
+    // that a single decoder works against every supported host codepage.
+    std::function<void(bool noWait, const std::vector<uint8_t> &commandBytes)>
+        onStrpccmdRequested;
     std::function<void(const std::string &)> onParseError;
     std::function<void(const std::string &)> onLog;
 };
