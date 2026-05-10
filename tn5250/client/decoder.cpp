@@ -276,14 +276,38 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                                            STRPCCMD_SIGNATURE + sizeof(STRPCCMD_SIGNATURE),
                                            payload.begin() + j + 1)) {
                                 // STRPCCMD marker: 0x80 trigger + 9-byte PCO
-                                // signature. Consume the 10 bytes so they do
-                                // not render as garbage, then notify the
-                                // consumer. The command string itself lives at
-                                // screen positions 11.. written by normal SBA +
-                                // text orders earlier in this same WTD, and is
-                                // the consumer's responsibility to extract.
-                                if (m_callbacks.onStrpccmdRequested) m_callbacks.onStrpccmdRequested();
-                                j += STRPCCMD_MARKER_LEN;
+                                // signature, followed by a 1-byte wait flag and
+                                // up to 123 EBCDIC command bytes per
+                                // SA21-9247-6 §15.7. Reading the command from
+                                // the wire here avoids the screen-buffer
+                                // round-trip the consumer would otherwise need
+                                // (which is fragile across OS/400 versions —
+                                // V5R4 places the bytes inline rather than at
+                                // tn5250j's hard-coded position 11).
+                                int p = j + STRPCCMD_MARKER_LEN;
+                                bool noWait = false;
+                                std::vector<uint8_t> commandBytes;
+                                if (p < static_cast<int>(payload.size()) &&
+                                    payload[p] != ESC) {
+                                    // EBCDIC 'a' = 0x81 → no-wait; any other
+                                    // non-ESC byte means wait. Treat ESC at the
+                                    // wait-flag position as "no payload";
+                                    // commandBytes remains empty and the
+                                    // consumer can decide how to handle that.
+                                    noWait = (payload[p] == 0x81);
+                                    p++;
+                                    const int payloadEnd =
+                                        std::min(p + STRPCCMD_MAX_COMMAND_LEN,
+                                                 static_cast<int>(payload.size()));
+                                    while (p < payloadEnd && payload[p] != ESC) {
+                                        commandBytes.push_back(payload[p]);
+                                        p++;
+                                    }
+                                }
+                                if (m_callbacks.onStrpccmdRequested) {
+                                    m_callbacks.onStrpccmdRequested(noWait, commandBytes);
+                                }
+                                j = p;
                                 continue;
                             }
                             if (ob == ORDER_SF) {

@@ -210,34 +210,109 @@ void testStrayBytesAreNotEmittedAsRawScreenData() {
 }
 
 // STRPCCMD marker detection: a WTD stream that contains the trigger byte 0x80
-// followed by the fixed 9-byte PCO signature must fire onStrpccmdRequested
-// exactly once and must remove the 10 marker bytes from the rendered display
-// data so they do not render as garbage on screen.
+// followed by the fixed 9-byte PCO signature, a wait flag, and command bytes
+// must fire onStrpccmdRequested exactly once with the wait flag and command
+// bytes from the wire — and must remove all of the marker + payload from the
+// rendered display data so they do not render as garbage on screen.
 void testStrpccmdMarkerFiresCallbackAndIsStrippedFromDisplay() {
     int strpccmdCount = 0;
+    bool gotNoWait = true;
+    std::vector<uint8_t> gotCommand;
     std::vector<uint8_t> rawData;
     DecoderCallbacks cb;
-    cb.onStrpccmdRequested = [&]() { strpccmdCount++; };
+    cb.onStrpccmdRequested = [&](bool noWait, const std::vector<uint8_t> &cmd) {
+        strpccmdCount++;
+        gotNoWait = noWait;
+        gotCommand = cmd;
+    };
     cb.onRawScreenData = [&](const std::vector<uint8_t> &d) { rawData = d; };
 
     Decoder decoder(cb);
-    // WTD payload: a printable EBCDIC byte, then the 10-byte STRPCCMD marker
-    // (trigger + 9-byte signature), then another printable byte. Only the two
-    // printable bytes should reach the rendered display; the marker is
-    // consumed silently.
+    // WTD payload: a printable EBCDIC byte; then the 10-byte STRPCCMD marker;
+    // then a wait-flag byte (0x82 = anything-but-'a' → wait); then 4 EBCDIC
+    // command bytes "echo" (0x85 0x83 0x88 0x96); then another printable
+    // byte. Only the two printable bytes should reach the rendered display;
+    // the marker, wait flag, and command bytes are all consumed silently.
     std::vector<uint8_t> displayData = {
         0xC1,
         0x80, 0xFC, 0xD7, 0xC3, 0xD6, 0x40, 0x83, 0x80, 0xA1, 0x80,
+        0x82,
+        0x85, 0x83, 0x88, 0x96,
         0xC2
     };
     auto gds = makeGDS(0x02, makeWTDPayload(displayData));
     decoder.parseData(gds);
 
     assert(strpccmdCount == 1);
-    assert(rawData.size() == 2);
+    assert(gotNoWait == false);  // wait flag != 0x81 → wait mode
+    assert(gotCommand.size() == 5);  // 4 EBCDIC bytes + the trailing 0xC2
+    assert(gotCommand[0] == 0x85);
+    assert(gotCommand[1] == 0x83);
+    assert(gotCommand[2] == 0x88);
+    assert(gotCommand[3] == 0x96);
+    assert(gotCommand[4] == 0xC2);
+    // The first byte (0xC1) lands in display; everything after the marker is
+    // consumed by STRPCCMD payload extraction up to the cap or next ESC.
+    assert(rawData.size() == 1);
     assert(rawData[0] == 0xC1);
-    assert(rawData[1] == 0xC2);
     std::printf("PASS: testStrpccmdMarkerFiresCallbackAndIsStrippedFromDisplay\n");
+}
+
+// EBCDIC 'a' = 0x81 in the wait-flag position must be reported as no-wait.
+void testStrpccmdNoWaitFlagIsReported() {
+    bool gotNoWait = false;
+    DecoderCallbacks cb;
+    cb.onStrpccmdRequested = [&](bool noWait, const std::vector<uint8_t> &) {
+        gotNoWait = noWait;
+    };
+
+    Decoder decoder(cb);
+    std::vector<uint8_t> displayData = {
+        0x80, 0xFC, 0xD7, 0xC3, 0xD6, 0x40, 0x83, 0x80, 0xA1, 0x80,
+        0x81,           // wait flag = EBCDIC 'a' → no-wait
+        0x85, 0x83, 0x88, 0x96
+    };
+    auto gds = makeGDS(0x02, makeWTDPayload(displayData));
+    decoder.parseData(gds);
+
+    assert(gotNoWait == true);
+    std::printf("PASS: testStrpccmdNoWaitFlagIsReported\n");
+}
+
+// An ESC byte appearing immediately after the marker (or inside the command
+// region) terminates command extraction — it marks the start of the next 5250
+// command, not part of the STRPCCMD payload.
+void testStrpccmdEscAfterMarkerStopsExtraction() {
+    bool gotCallback = false;
+    std::vector<uint8_t> gotCommand;
+    DecoderCallbacks cb;
+    cb.onStrpccmdRequested = [&](bool, const std::vector<uint8_t> &cmd) {
+        gotCallback = true;
+        gotCommand = cmd;
+    };
+
+    Decoder decoder(cb);
+    // Marker followed by a wait flag, two command bytes, then ESC starting a
+    // new command (Clear Unit). Only the two command bytes should land in
+    // gotCommand; the ESC and what follows are not consumed by STRPCCMD.
+    std::vector<uint8_t> wtdBody;
+    wtdBody.push_back(0x04);  // ESC
+    wtdBody.push_back(0x11);  // WTD CC
+    wtdBody.push_back(0x00);  // ctrl1
+    wtdBody.push_back(0x00);  // ctrl2
+    for (uint8_t b : {0x80, 0xFC, 0xD7, 0xC3, 0xD6, 0x40, 0x83, 0x80, 0xA1, 0x80,
+                      0x82, 0x85, 0x83})
+        wtdBody.push_back(b);
+    wtdBody.push_back(0x04);  // ESC starting next command
+    wtdBody.push_back(0x40);  // Clear Unit
+    auto gds = makeGDS(0x02, wtdBody);
+    decoder.parseData(gds);
+
+    assert(gotCallback);
+    assert(gotCommand.size() == 2);
+    assert(gotCommand[0] == 0x85);
+    assert(gotCommand[1] == 0x83);
+    std::printf("PASS: testStrpccmdEscAfterMarkerStopsExtraction\n");
 }
 
 // A 0x80 byte that is NOT followed by the exact 9-byte PCO signature must be
@@ -248,7 +323,9 @@ void testStrpccmdMismatchedSignatureDoesNotFire() {
     int strpccmdCount = 0;
     std::vector<uint8_t> rawData;
     DecoderCallbacks cb;
-    cb.onStrpccmdRequested = [&]() { strpccmdCount++; };
+    cb.onStrpccmdRequested = [&](bool, const std::vector<uint8_t> &) {
+        strpccmdCount++;
+    };
     cb.onRawScreenData = [&](const std::vector<uint8_t> &d) { rawData = d; };
 
     Decoder decoder(cb);
@@ -272,7 +349,9 @@ void testStrpccmdMismatchedSignatureDoesNotFire() {
 void testStrpccmdTruncatedSignatureIsSafe() {
     int strpccmdCount = 0;
     DecoderCallbacks cb;
-    cb.onStrpccmdRequested = [&]() { strpccmdCount++; };
+    cb.onStrpccmdRequested = [&](bool, const std::vector<uint8_t> &) {
+        strpccmdCount++;
+    };
 
     Decoder decoder(cb);
     // 0x80 with only 4 bytes of would-be signature available.
@@ -295,6 +374,8 @@ int main() {
     testUnknownEscCommandDoesNotLeakIntoRawData();
     testStrayBytesAreNotEmittedAsRawScreenData();
     testStrpccmdMarkerFiresCallbackAndIsStrippedFromDisplay();
+    testStrpccmdNoWaitFlagIsReported();
+    testStrpccmdEscAfterMarkerStopsExtraction();
     testStrpccmdMismatchedSignatureDoesNotFire();
     testStrpccmdTruncatedSignatureIsSafe();
     std::printf("All Decoder tests passed.\n");

@@ -101,4 +101,9 @@ constexpr uint8_t STRPCCMD_SIGNATURE[9] = {
 };
 constexpr int STRPCCMD_MARKER_LEN = 1 + 9;
 
+// After the 10-byte marker the host writes 1 wait-flag byte plus up to
+// STRPCCMD_MAX_COMMAND_LEN bytes of command, padded with EBCDIC 0x40 blanks.
+// 123 is the PCCMD parameter limit on OS/400 ≤ V7R1 per SA21-9247-6 §15.7.
+constexpr int STRPCCMD_MAX_COMMAND_LEN = 123;
+
 } // namespace tn5250::protocol
