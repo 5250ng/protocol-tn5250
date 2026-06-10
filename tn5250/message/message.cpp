@@ -99,20 +99,41 @@ std::vector<uint8_t> Message::marshal(std::string *error) const {
         varLen = 3;
     }
 
-    // Compute total record size excluding the 2-byte recordLength field.
-    // Fixed fields after length: type(2) + reserved(2) + varLenByte(1) + varLen + payload
-    const size_t sizeWithoutLen = 2 + 2 + 1 + static_cast<size_t>(varLen) + commands.size() * 3;
-    if (sizeWithoutLen > 0xFFFF) {
+    // Marshal the commands first so the record length reflects the bytes
+    // actually written, not a per-command estimate.
+    std::vector<uint8_t> payload;
+    for (const auto &cmd : commands) {
+        std::string cmdError;
+        std::vector<uint8_t> bytes =
+            std::visit([&cmdError](const auto &c) { return c.marshal(&cmdError); }, cmd);
+        if (bytes.empty()) {
+            if (error) {
+                *error = "5250Message: error marshalling command";
+                if (!cmdError.empty()) {
+                    *error += " -> " + cmdError;
+                }
+            }
+            return {};
+        }
+        payload.insert(payload.end(), bytes.begin(), bytes.end());
+    }
+
+    // recordLength is the total record size INCLUDING the 2-byte length
+    // field itself — the convention enforced by Decoder::parseData and used
+    // on the wire (RFC 1205 logical record length):
+    //   len(2) + type(2) + reserved(2) + varLenByte(1) + varLen + payload
+    const size_t totalLen = 2 + 2 + 2 + 1 + static_cast<size_t>(varLen) + payload.size();
+    if (totalLen > 0xFFFF) {
         if (error)
             *error = "5250Message: record too large to encode";
         return {};
     }
 
     std::vector<uint8_t> out;
-    out.reserve(2 + sizeWithoutLen);
+    out.reserve(totalLen);
 
-    // recordLength (big-endian): everything after these two bytes
-    utils::endianness::be16_write(out, static_cast<uint16_t>(sizeWithoutLen));
+    // recordLength (big-endian)
+    utils::endianness::be16_write(out, static_cast<uint16_t>(totalLen));
 
     // recordType (big-endian)
     utils::endianness::be16_write(out, header.recordType.value);
@@ -130,8 +151,8 @@ std::vector<uint8_t> Message::marshal(std::string *error) const {
         out.push_back(0x00);
     }
 
-    // Payload
-    // out.insert(out.end(), payload.begin(), payload.end());
+    // Commands / payload
+    out.insert(out.end(), payload.begin(), payload.end());
 
     return out;
 }
