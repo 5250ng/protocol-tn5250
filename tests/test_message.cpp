@@ -36,9 +36,57 @@ void testMessageAcceptsMinimalVariableHeader() {
     std::printf("PASS: testMessageAcceptsMinimalVariableHeader\n");
 }
 
+// Regression tests for marshal framing (5250ng/5250ng#151): the record must
+// contain the marshalled command bytes, and recordLength must equal the
+// total record size including the 2-byte length field itself — the
+// convention Decoder::parseData frames by.
+void testMarshalProducesSelfDescribingLength() {
+    Message msg;
+    msg.header.recordType = header::RecordType(0x12A0);
+    msg.opcode = OperationCode(0x03);
+
+    std::string err;
+    std::vector<uint8_t> out = msg.marshal(&err);
+    assert(!out.empty());
+    const uint16_t recLen = static_cast<uint16_t>((out[0] << 8) | out[1]);
+    assert(recLen == out.size());
+    // len(2)+type(2)+reserved(2)+varLenByte(1)+varLen(3) = 10
+    assert(out.size() == 10);
+    std::printf("PASS: testMarshalProducesSelfDescribingLength\n");
+}
+
+void testMarshalUnmarshalRoundTripWithCommand() {
+    Message msg;
+    msg.header.recordType = header::RecordType(0x12A0);
+    msg.opcode = OperationCode(0x03);
+    command::CommandCsClearScreen clear;
+    clear.code = command::CommandCode(command::CommandCode::TN5250_COMMAND_CLEAR_UNIT);
+    msg.commands.push_back(clear);
+
+    std::string err;
+    std::vector<uint8_t> out = msg.marshal(&err);
+    assert(!out.empty());
+    // Header (10) + ESC + Clear Unit (2)
+    assert(out.size() == 12);
+    const uint16_t recLen = static_cast<uint16_t>((out[0] << 8) | out[1]);
+    assert(recLen == out.size());
+    // The command bytes are actually present
+    assert(out[10] == 0x04);
+    assert(out[11] == command::CommandCode::TN5250_COMMAND_CLEAR_UNIT);
+
+    Message parsed;
+    uint32_t read = parsed.unmarshal(out, &err);
+    assert(read == out.size());
+    assert(parsed.commands.size() == 1);
+    assert(std::holds_alternative<command::CommandCsClearScreen>(parsed.commands.front()));
+    std::printf("PASS: testMarshalUnmarshalRoundTripWithCommand\n");
+}
+
 int main() {
     testMessageRejectsExactlySixByteBuffer();
     testMessageAcceptsMinimalVariableHeader();
+    testMarshalProducesSelfDescribingLength();
+    testMarshalUnmarshalRoundTripWithCommand();
     std::printf("All Message tests passed.\n");
     return 0;
 }
