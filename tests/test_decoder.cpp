@@ -140,16 +140,22 @@ void testMultipleCommands() {
 // from its 2-byte big-endian length and the 0x04 byte is preserved verbatim.
 void testWsfLengthPrefixHonoursEmbeddedEsc() {
     std::vector<uint8_t> sfData;
+    int parseErrors = 0;
     DecoderCallbacks cb;
     cb.onWriteStructuredField = [&](const std::vector<uint8_t> &d) { sfData = d; };
+    cb.onParseError = [&](const std::string &) { parseErrors++; };
 
     Decoder decoder(cb);
-    // Single SF: length=0x0008, class=0xD9, type=0x70, body has an embedded 0x04
-    std::vector<uint8_t> wsf = {0x04, 0xF3, 0x00, 0x08, 0xD9, 0x70, 0xAA, 0x04, 0xBB};
+    // Single SF: length=0x0008 (covering length + class + type + data),
+    // class=0xD9, type=0x70, 4 data bytes with an embedded 0x04
+    std::vector<uint8_t> wsf = {0x04, 0xF3,
+                                0x00, 0x08, 0xD9, 0x70, 0xAA, 0xCC, 0x04, 0xBB};
     auto gds = makeGDS(0x02, wsf);
     decoder.parseData(gds);
 
-    // The callback receives the SF bytes including length and class/type.
+    // The callback receives the SF bytes including length and class/type,
+    // with no length-validation error.
+    assert(parseErrors == 0);
     assert(sfData.size() == 8);
     assert(sfData[0] == 0x00 && sfData[1] == 0x08);
     assert(sfData[2] == 0xD9 && sfData[3] == 0x70);
