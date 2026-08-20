@@ -7,6 +7,7 @@
 // (at your option) any later version.
 
 #include <tn5250/message/command/order/orders/order_ra_repeat_to_address.h>
+#include <tn5250/message/command/order/orders/order_sba_set_buffer_address.h>
 #include <cassert>
 #include <cstdio>
 
@@ -37,9 +38,40 @@ void testRaAcceptsFourByteBuffer() {
     std::printf("PASS: testRaAcceptsFourByteBuffer\n");
 }
 
+void testSbaAcceptsOrderWithoutDisplayData() {
+    OrderSbaSetBufferAddress sba;
+    std::string err;
+    const std::vector<uint8_t> buf = {
+        OrderCode::SET_BUFFER_ADDRESS, 0x01, 0x02
+    };
+
+    const uint32_t read = sba.unmarshal(buf, &err);
+    assert(read == buf.size());
+    assert(err.empty());
+    assert(sba.repeatedCharacter.empty());
+    std::printf("PASS: testSbaAcceptsOrderWithoutDisplayData\n");
+}
+
+void testSbaMarshalPreservesAllDisplayData() {
+    OrderSbaSetBufferAddress sba;
+    sba.code = OrderCode(OrderCode::SET_BUFFER_ADDRESS);
+    sba.rowAddress = 0x01;
+    sba.columnAddress = 0x02;
+    sba.repeatedCharacter = "ABC";
+
+    const std::vector<uint8_t> out = sba.marshal(nullptr);
+    const std::vector<uint8_t> expected = {
+        OrderCode::SET_BUFFER_ADDRESS, 0x01, 0x02, 'A', 'B', 'C'
+    };
+    assert(out == expected);
+    std::printf("PASS: testSbaMarshalPreservesAllDisplayData\n");
+}
+
 int main() {
     testRaRejectsThreeByteBuffer();
     testRaAcceptsFourByteBuffer();
+    testSbaAcceptsOrderWithoutDisplayData();
+    testSbaMarshalPreservesAllDisplayData();
     std::printf("All Order tests passed.\n");
     return 0;
 }
