@@ -37,7 +37,7 @@ namespace tn5250::message {
  * - recordLength (2 bytes, BE): Length of record body following these two bytes
  * - recordType   (2 bytes, BE): Expected 0x12A0 (General Data Stream)
  * - fixedReserved(2 bytes, BE): Reserved, typically 0x0000
- * - variableLength (1 byte)    : Length of variable header that follows
+ * - variableLength (1 byte)    : Variable-header length including this byte
  * - snaFlags        (1 byte)   : SNA flags
  * - variableReserved(1 byte)   : Reserved, typically 0x00
  * - opcode          (1 byte)   : Operation code (e.g. 0x03 Put/Get)
@@ -48,7 +48,7 @@ struct Message {
     header::Header header;
 
     // Variable header
-    uint8_t variableLength = 0;   // Length of variable header
+    uint8_t variableLength = 0;   // Length including this byte (minimum 4)
     uint8_t snaFlags = 0;         // SNA flags
     uint8_t variableReserved = 0; // Reserved
     OperationCode opcode;         // Operation code

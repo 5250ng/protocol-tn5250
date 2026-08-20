@@ -41,31 +41,31 @@ uint32_t Message::unmarshal(const std::vector<uint8_t> &buffer, std::string *err
         return 0;
     }
 
-    // Unmarshal the variable header
+    // The variable-header length includes its own length byte.
     variableLength = static_cast<uint8_t>(buffer[read_bytes]);
     read_bytes++;
 
+    if (variableLength < 4) {
+        if (error)
+            *error = "5250Message: variable header too short";
+        return 0;
+    }
+
     // Verify we have enough bytes for variable header
-    const size_t needed = static_cast<size_t>(read_bytes) + variableLength;
+    const size_t needed = static_cast<size_t>(read_bytes) + variableLength - 1;
     if (buffer.size() < needed) {
         if (error)
             *error = "5250Message: buffer too short for variable header";
         return 0;
     }
 
-    // Variable header bytes (minimum we rely on: flags (1), reserved (1), opcode (1))
-    if (variableLength >= 1) {
-        snaFlags = static_cast<uint8_t>(buffer[read_bytes]);
-        read_bytes++;
-    }
-    if (variableLength >= 2) {
-        variableReserved = static_cast<uint8_t>(buffer[read_bytes]);
-        read_bytes++;
-    }
-    if (variableLength >= 3) {
-        opcode = OperationCode(static_cast<uint8_t>(buffer[read_bytes]));
-        read_bytes++;
-    }
+    snaFlags = static_cast<uint8_t>(buffer[read_bytes++]);
+    variableReserved = static_cast<uint8_t>(buffer[read_bytes++]);
+    opcode = OperationCode(static_cast<uint8_t>(buffer[read_bytes++]));
+
+    // Skip any extension bytes in a variable header longer than the standard
+    // four-byte layout before parsing the command payload.
+    read_bytes = static_cast<uint32_t>(needed);
 
     // Unmarshal the commands
     while (read_bytes < buffer.size()) {
@@ -93,10 +93,10 @@ uint32_t Message::unmarshal(const std::vector<uint8_t> &buffer, std::string *err
 }
 
 std::vector<uint8_t> Message::marshal(std::string *error) const {
-    // Determine variable header length (must include at least flags, reserved, opcode)
+    // The wire length includes its own byte plus flags, reserved, and opcode.
     uint8_t varLen = variableLength;
-    if (varLen < 3) {
-        varLen = 3;
+    if (varLen < 4) {
+        varLen = 4;
     }
 
     // Marshal the commands first so the record length reflects the bytes
@@ -121,8 +121,8 @@ std::vector<uint8_t> Message::marshal(std::string *error) const {
     // recordLength is the total record size INCLUDING the 2-byte length
     // field itself — the convention enforced by Decoder::parseData and used
     // on the wire (RFC 1205 logical record length):
-    //   len(2) + type(2) + reserved(2) + varLenByte(1) + varLen + payload
-    const size_t totalLen = 2 + 2 + 2 + 1 + static_cast<size_t>(varLen) + payload.size();
+    //   len(2) + type(2) + reserved(2) + variable header (varLen) + payload
+    const size_t totalLen = 2 + 2 + 2 + static_cast<size_t>(varLen) + payload.size();
     if (totalLen > 0xFFFF) {
         if (error)
             *error = "5250Message: record too large to encode";
@@ -146,8 +146,9 @@ std::vector<uint8_t> Message::marshal(std::string *error) const {
     out.push_back(snaFlags);
     out.push_back(variableReserved);
     out.push_back(opcode.value);
-    // If caller specified a larger variableLength, pad remaining bytes with zero
-    for (uint8_t i = 3; i < varLen; ++i) {
+    // If caller specified a larger variableLength, pad remaining bytes with zero.
+    // Four bytes have already been emitted: length, flags, reserved, and opcode.
+    for (uint8_t i = 4; i < varLen; ++i) {
         out.push_back(0x00);
     }
 

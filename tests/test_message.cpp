@@ -25,15 +25,28 @@ void testMessageRejectsExactlySixByteBuffer() {
     std::printf("PASS: testMessageRejectsExactlySixByteBuffer\n");
 }
 
-void testMessageAcceptsMinimalVariableHeader() {
-    // 6-byte fixed header + 1 variableLength byte (=0, no variable fields)
+void testMessageRejectsShortVariableHeader() {
     Message msg;
     std::string err;
     std::vector<uint8_t> buf = {0x12, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00};
     uint32_t read = msg.unmarshal(buf, &err);
-    assert(read == 7);
-    assert(msg.variableLength == 0);
-    std::printf("PASS: testMessageAcceptsMinimalVariableHeader\n");
+    assert(read == 0);
+    assert(!err.empty());
+    std::printf("PASS: testMessageRejectsShortVariableHeader\n");
+}
+
+void testMessageAcceptsWireVariableHeader() {
+    Message msg;
+    std::string err;
+    std::vector<uint8_t> buf = {
+        0x00, 0x0A, 0x12, 0xA0, 0x00, 0x00,
+        0x04, 0x00, 0x00, 0x03
+    };
+    uint32_t read = msg.unmarshal(buf, &err);
+    assert(read == 10);
+    assert(msg.variableLength == 4);
+    assert(msg.opcode.value == 0x03);
+    std::printf("PASS: testMessageAcceptsWireVariableHeader\n");
 }
 
 // Regression tests for marshal framing (5250ng/5250ng#151): the record must
@@ -50,8 +63,9 @@ void testMarshalProducesSelfDescribingLength() {
     assert(!out.empty());
     const uint16_t recLen = static_cast<uint16_t>((out[0] << 8) | out[1]);
     assert(recLen == out.size());
-    // len(2)+type(2)+reserved(2)+varLenByte(1)+varLen(3) = 10
+    // len(2)+type(2)+reserved(2)+variable header(4) = 10
     assert(out.size() == 10);
+    assert(out[6] == 4);
     std::printf("PASS: testMarshalProducesSelfDescribingLength\n");
 }
 
@@ -84,7 +98,8 @@ void testMarshalUnmarshalRoundTripWithCommand() {
 
 int main() {
     testMessageRejectsExactlySixByteBuffer();
-    testMessageAcceptsMinimalVariableHeader();
+    testMessageRejectsShortVariableHeader();
+    testMessageAcceptsWireVariableHeader();
     testMarshalProducesSelfDescribingLength();
     testMarshalUnmarshalRoundTripWithCommand();
     std::printf("All Message tests passed.\n");
