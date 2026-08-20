@@ -47,9 +47,9 @@ uint32_t CommandRmfReadMdtFields::unmarshal(const std::vector<uint8_t> &buffer, 
 
     // Verify the command code is correct
     code = CommandCode(buffer[read_bytes]);
-    if (code.value != CommandCode::TN5250_COMMAND_WRITE_TO_DISPLAY) {
+    if (code.value != CommandCode::TN5250_COMMAND_READ_MDT_FIELDS) {
         if (error) {
-            *error = "5250Command: command code is not TN5250_COMMAND_WRITE_TO_DISPLAY (0x11)";
+            *error = "5250Command: command code is not TN5250_COMMAND_READ_MDT_FIELDS (0x52)";
         }
         return 0;
     }
