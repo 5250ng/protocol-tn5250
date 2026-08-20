@@ -26,7 +26,7 @@ namespace tn5250::message::command::order {
  * @return bytes read on success; 0 on failure.
  */
 uint32_t OrderSbaSetBufferAddress::unmarshal(const std::vector<uint8_t> &buffer, std::string *error) {
-    if (buffer.size() < 4) {
+    if (buffer.size() < 3) {
         if (error)
             *error = "OrderSbaSetBufferAddress: buffer too short for order code and attributes";
         return 0;
@@ -48,7 +48,8 @@ uint32_t OrderSbaSetBufferAddress::unmarshal(const std::vector<uint8_t> &buffer,
     columnAddress = buffer[read_bytes];
     read_bytes++;
 
-    // Consume repeated character bytes until the start of a next order code or end of buffer
+    // Consume display data bytes until the start of a next order code or end of buffer.
+    repeatedCharacter.clear();
     auto isOrderCode = [](uint8_t b) -> bool {
         switch (b) {
         case OrderCode::START_OF_HEADER:
@@ -80,7 +81,7 @@ std::vector<uint8_t> OrderSbaSetBufferAddress::marshal(std::string *error) const
     buffer.push_back(code.value);
     buffer.push_back(rowAddress);
     buffer.push_back(columnAddress);
-    buffer.push_back(repeatedCharacter[0]);
+    buffer.insert(buffer.end(), repeatedCharacter.begin(), repeatedCharacter.end());
     return buffer;
 }
 
