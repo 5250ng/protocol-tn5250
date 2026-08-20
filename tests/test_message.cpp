@@ -96,12 +96,30 @@ void testMarshalUnmarshalRoundTripWithCommand() {
     std::printf("PASS: testMarshalUnmarshalRoundTripWithCommand\n");
 }
 
+void testUnmarshalReadMdtFieldsCommand() {
+    command::Command parsed;
+    std::string err;
+    const std::vector<uint8_t> input = {
+        0x04,
+        command::CommandCode::TN5250_COMMAND_READ_MDT_FIELDS,
+        0x00,
+        0x00
+    };
+
+    const uint32_t read = command::unmarshalCommand(input, parsed, &err);
+    assert(read == input.size());
+    assert(err.empty());
+    assert(std::holds_alternative<command::CommandRmfReadMdtFields>(parsed));
+    std::printf("PASS: testUnmarshalReadMdtFieldsCommand\n");
+}
+
 int main() {
     testMessageRejectsExactlySixByteBuffer();
     testMessageRejectsShortVariableHeader();
     testMessageAcceptsWireVariableHeader();
     testMarshalProducesSelfDescribingLength();
     testMarshalUnmarshalRoundTripWithCommand();
+    testUnmarshalReadMdtFieldsCommand();
     std::printf("All Message tests passed.\n");
     return 0;
 }
