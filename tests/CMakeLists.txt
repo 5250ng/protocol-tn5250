@@ -24,3 +24,7 @@ add_test(NAME test_order_soh COMMAND test_order_soh)
 add_executable(test_orders test_orders.cpp)
 target_link_libraries(test_orders PRIVATE tn5250)
 add_test(NAME test_orders COMMAND test_orders)
+
+add_executable(test_protocol_handler test_protocol_handler.cpp)
+target_link_libraries(test_protocol_handler PRIVATE tn5250)
+add_test(NAME test_protocol_handler COMMAND test_protocol_handler)

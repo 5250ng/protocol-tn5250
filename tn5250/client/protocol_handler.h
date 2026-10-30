@@ -67,11 +67,16 @@ class ProtocolHandler {
     ConnectionState state() const { return m_state; }
     bool isHandshakeComplete() const { return m_handshakeComplete; }
 
+    // Make the GDS length fields of one EOR-delimited record agree with the
+    // record's actual size. Returns the record unchanged when they already do.
+    static std::vector<uint8_t> repairGdsRecordLength(const std::vector<uint8_t> &record);
+
   private:
     void setState(ConnectionState newState);
 
     // Telnet
     void processTelnetData(const std::vector<uint8_t> &data);
+    void flushRecord();
     void sendTelnetCommand(telnet::TelnetCommand cmd, telnet::TelnetOption opt);
     void handleTelnetCommand(uint8_t cmd, uint8_t opt);
     void handleSubnegotiation(telnet::TelnetOption opt, const std::vector<uint8_t> &data);
@@ -90,6 +95,9 @@ class ProtocolHandler {
 
     std::vector<uint8_t> m_serverSeed;
     std::vector<uint8_t> m_receiveBuffer;
+    // Application bytes of the current record, held until IAC EOR once EOR
+    // is negotiated so each record reaches the decoder whole.
+    std::vector<uint8_t> m_recordBuffer;
 
     bool m_inSubnegotiation;
     telnet::TelnetOption m_currentSubnegotiation;

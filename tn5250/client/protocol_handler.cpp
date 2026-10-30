@@ -69,6 +69,22 @@ void ProtocolHandler::processTelnetData(const std::vector<uint8_t> &data) {
     std::vector<uint8_t> processed;
     size_t i = 0;
 
+    // Once EOR is negotiated, application bytes are collected per record and
+    // handed over at IAC EOR (RFC 1205), so a record whose GDS length is
+    // wrong cannot swallow the records that follow it.
+    auto framing = [this]() { return m_handshakeComplete && m_eorNegotiated; };
+    auto appendData = [&](uint8_t b) {
+        if (framing()) {
+            if (!processed.empty()) {
+                m_recordBuffer.insert(m_recordBuffer.end(), processed.begin(), processed.end());
+                processed.clear();
+            }
+            m_recordBuffer.push_back(b);
+        } else {
+            processed.push_back(b);
+        }
+    };
+
     while (i < m_receiveBuffer.size()) {
         uint8_t byte = m_receiveBuffer[i];
 
@@ -77,8 +93,29 @@ void ProtocolHandler::processTelnetData(const std::vector<uint8_t> &data) {
             uint8_t next = m_receiveBuffer[i + 1];
 
             if (next == static_cast<uint8_t>(TelnetCommand::IAC)) {
-                processed.push_back(0xFF);
+                appendData(0xFF);
                 i += 2;
+                continue;
+            }
+
+            // Unescaped 0xFF in the data stream. Host Integration Server 2000
+            // before the KB Q327297 hotfix forwards X'FF' bytes from the host's
+            // GDS data without doubling them. Telnet commands are 0xEF (EOR)
+            // and up, so any lower byte after IAC means the IAC was data.
+            // Inside a record nothing but IAC IAC and IAC EOR is expected, so
+            // there any other pair is data as well (e.g. 0xFF 0xF1).
+            const bool midRecord = framing() && !m_recordBuffer.empty();
+            if (!m_inSubnegotiation &&
+                (next < static_cast<uint8_t>(TelnetCommand::EOR) ||
+                 (midRecord && next != static_cast<uint8_t>(TelnetCommand::EOR)))) {
+                if (m_callbacks.onLog) {
+                    char msg[96];
+                    std::snprintf(msg, sizeof(msg),
+                                  "TN5250: unescaped 0xFF followed by 0x%02X, treating it as data", next);
+                    m_callbacks.onLog(msg);
+                }
+                appendData(0xFF);
+                i += 1;
                 continue;
             }
 
@@ -89,8 +126,14 @@ void ProtocolHandler::processTelnetData(const std::vector<uint8_t> &data) {
                         m_subnegotiationBuffer.clear();
                         m_inSubnegotiation = false;
                     }
+                } else if (next == static_cast<uint8_t>(TelnetCommand::EOR) && framing()) {
+                    if (!processed.empty()) {
+                        m_recordBuffer.insert(m_recordBuffer.begin(), processed.begin(), processed.end());
+                        processed.clear();
+                    }
+                    flushRecord();
                 }
-                // EOR and other standalone commands silently consumed
+                // Other standalone commands silently consumed
                 i += 2;
                 continue;
             }
@@ -104,7 +147,7 @@ void ProtocolHandler::processTelnetData(const std::vector<uint8_t> &data) {
             m_subnegotiationBuffer.push_back(byte);
             i++;
         } else {
-            processed.push_back(byte);
+            appendData(byte);
             i++;
         }
     }
@@ -121,6 +164,45 @@ void ProtocolHandler::processTelnetData(const std::vector<uint8_t> &data) {
             processHandshakeData(processed);
         }
     }
+}
+
+void ProtocolHandler::flushRecord() {
+    if (m_recordBuffer.empty()) return;
+    std::vector<uint8_t> record = repairGdsRecordLength(m_recordBuffer);
+    if (record != m_recordBuffer && m_callbacks.onLog) {
+        m_callbacks.onLog("TN5250: GDS record length does not match IAC EOR, using the EOR boundary");
+    }
+    m_recordBuffer.clear();
+    if (m_callbacks.onDataReceived) m_callbacks.onDataReceived(record);
+}
+
+std::vector<uint8_t> ProtocolHandler::repairGdsRecordLength(const std::vector<uint8_t> &record) {
+    using namespace tn5250::protocol;
+    const size_t size = record.size();
+
+    // Walk the chain of GDS length fields; a well-formed record (or several
+    // back-to-back records) ends exactly at the EOR.
+    size_t pos = 0;
+    while (pos + 2 <= size) {
+        const size_t len = (static_cast<size_t>(record[pos]) << 8) | record[pos + 1];
+        if (len < static_cast<size_t>(GDS_MIN_RECORD_LEN) || pos + len > size) break;
+        pos += len;
+    }
+    if (pos == size) return record;
+
+    // The length disagrees with the EOR boundary (bytes lost or added in
+    // transit). Trust the EOR so the decoder neither waits for bytes that
+    // will never come nor reads into the next record.
+    const size_t remaining = size - pos;
+    if (remaining < static_cast<size_t>(GDS_HEADER_SIZE) ||
+        remaining > static_cast<size_t>(GDS_MAX_RECORD_LEN) ||
+        record[pos + 2] != GDS_RECORD_TYPE_HI || record[pos + 3] != GDS_RECORD_TYPE_LO) {
+        return record;
+    }
+    std::vector<uint8_t> repaired = record;
+    repaired[pos] = static_cast<uint8_t>((remaining >> 8) & 0xFF);
+    repaired[pos + 1] = static_cast<uint8_t>(remaining & 0xFF);
+    return repaired;
 }
 
 void ProtocolHandler::sendTelnetCommand(TelnetCommand cmd, TelnetOption opt) {
