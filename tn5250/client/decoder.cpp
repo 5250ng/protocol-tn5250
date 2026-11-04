@@ -171,15 +171,30 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                             m_callbacks.onCommandReceived(TN5250Command::READ_MDT_FIELDS, {});
                         i += 4; continue;
                     }
+                    if (cc == CC_READ_MDT_FIELDS_ALT) {
+                        if (m_callbacks.onCommandReceived)
+                            m_callbacks.onCommandReceived(TN5250Command::READ_MDT_FIELDS_ALT, {});
+                        i += 4; continue;
+                    }
+                    // Read Immediate, Read Modified Immediate Alternate and the
+                    // Read Screen family carry no CC1/CC2: the next command
+                    // starts right after the command code.
                     if (cc == CC_READ_IMMEDIATE) {
                         if (m_callbacks.onCommandReceived)
                             m_callbacks.onCommandReceived(TN5250Command::READ_IMMEDIATE, {});
-                        i += 4; continue;
+                        i += 2; continue;
                     }
-                    if (cc == CC_READ_SCREEN || cc == CC_READ_SCREEN_ALT) {
-                        bool includeAttrs = (cc == CC_READ_SCREEN_ALT);
+                    if (cc == CC_READ_MODIFIED_IMMEDIATE_ALT) {
+                        if (m_callbacks.onCommandReceived)
+                            m_callbacks.onCommandReceived(TN5250Command::READ_MODIFIED_IMMEDIATE_ALT, {});
+                        i += 2; continue;
+                    }
+                    if (cc == CC_READ_SCREEN || cc == CC_READ_SCREEN_EXT_ATTR ||
+                        cc == CC_READ_SCREEN_TO_PRINT || cc == CC_READ_SCREEN_TO_PRINT_EXT_ATTR) {
+                        bool includeAttrs = (cc == CC_READ_SCREEN_EXT_ATTR ||
+                                             cc == CC_READ_SCREEN_TO_PRINT_EXT_ATTR);
                         if (m_callbacks.onReadScreen) m_callbacks.onReadScreen(includeAttrs);
-                        i += 4; continue;
+                        i += 2; continue;
                     }
                     if (cc == CC_WRITE_STRUCTURED_FIELD) {
                         // RFC 1205 §12.5.1: a WSF stream contains one or more

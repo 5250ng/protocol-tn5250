@@ -93,6 +93,55 @@ void testInvalidVarLen() {
     std::printf("PASS: testInvalidVarLen\n");
 }
 
+// Read commands followed by a Write To Display in the same record: the reads
+// without parameters (Read Immediate, Read Modified Immediate Alternate, the
+// Read Screen family) are two bytes long and the field reads (Read Input
+// Fields, Read MDT Fields, Read MDT Alternate) four, so the WTD after each is
+// decoded whole.
+void testReadCommandsLeaveTheNextCommandIntact() {
+    struct Case {
+        std::vector<uint8_t> read;
+        int command;       // TN5250Command value expected, or -1
+        int readScreen;    // onReadScreen argument expected (0/1), or -1
+    };
+    const std::vector<Case> cases = {
+        {{0x04, 0x72}, 0x72, -1},
+        {{0x04, 0x83}, 0x83, -1},
+        {{0x04, 0x62}, -1, 0},
+        {{0x04, 0x64}, -1, 1},
+        {{0x04, 0x66}, -1, 0},
+        {{0x04, 0x68}, -1, 1},
+        {{0x04, 0x42, 0x00, 0x00}, 0x42, -1},
+        {{0x04, 0x52, 0x00, 0x00}, 0x52, -1},
+        {{0x04, 0x82, 0x00, 0x00}, 0x82, -1},
+    };
+    for (const auto &c : cases) {
+        int command = -1, readScreen = -1, controls = 0, unlocks = 0;
+        std::vector<uint8_t> raw;
+        DecoderCallbacks cb;
+        cb.onCommandReceived = [&](TN5250Command cmd, const std::vector<uint8_t> &) {
+            command = static_cast<int>(cmd);
+        };
+        cb.onReadScreen = [&](bool attrs) { readScreen = attrs ? 1 : 0; };
+        cb.onControlCharacters = [&](uint8_t, uint8_t) { ++controls; };
+        cb.onKeyboardUnlock = [&]() { ++unlocks; };
+        cb.onRawScreenData = [&](const std::vector<uint8_t> &d) { raw = d; };
+
+        Decoder decoder(cb);
+        std::vector<uint8_t> payload = c.read;
+        auto wtd = makeWTDPayload({0xD8});
+        wtd[3] = 0x08;  // CC2: unlock the keyboard
+        payload.insert(payload.end(), wtd.begin(), wtd.end());
+        decoder.parseData(makeGDS(0x03, payload));
+
+        assert(command == c.command);
+        assert(readScreen == c.readScreen);
+        assert(controls == 1 && unlocks == 1);
+        assert(raw.size() == 1 && raw[0] == 0xD8);
+    }
+    std::printf("PASS: testReadCommandsLeaveTheNextCommandIntact\n");
+}
+
 void testStateTransitions() {
     int clearCount = 0;
     DecoderCallbacks cb;
@@ -408,6 +457,7 @@ int main() {
     testCommandWithData();
     testClearScreen();
     testInvalidVarLen();
+    testReadCommandsLeaveTheNextCommandIntact();
     testStateTransitions();
     testMultipleCommands();
     testWsfLengthPrefixHonoursEmbeddedEsc();

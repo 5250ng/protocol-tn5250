@@ -34,6 +34,8 @@ constexpr uint8_t CC_READ_INPUT_FIELDS    = 0x42;
 constexpr uint8_t CC_CLEAR_FORMAT_TABLE   = 0x50;
 constexpr uint8_t CC_READ_MDT_FIELDS      = 0x52;
 constexpr uint8_t CC_READ_IMMEDIATE       = 0x72;
+constexpr uint8_t CC_READ_MDT_FIELDS_ALT  = 0x82; // Read MDT Alternate
+constexpr uint8_t CC_READ_MODIFIED_IMMEDIATE_ALT = 0x83;
 constexpr uint8_t CC_WRITE_ERROR_CODE_TO_WINDOW = 0x22;
 constexpr uint8_t CC_WRITE_STRUCTURED_FIELD = 0xF3;
 
@@ -78,9 +80,13 @@ constexpr uint8_t ORDER_TD   = 0x10; // Transparent Data
 constexpr uint8_t ORDER_WEA  = 0x12; // Write Extended Attribute
 constexpr uint8_t ORDER_WDSF = 0x15; // Write to Display Structured Field (new-style)
 
-// Read Screen command codes (ESC + CC)
+// Read Screen command codes (ESC + CC). None of them carries parameters.
+// Read Screen to Print returns the Read Screen format; it differs only in
+// mapping GUI-like characters to their non-GUI-like defaults.
 constexpr uint8_t CC_READ_SCREEN          = 0x62;
-constexpr uint8_t CC_READ_SCREEN_ALT      = 0x66;
+constexpr uint8_t CC_READ_SCREEN_EXT_ATTR = 0x64; // Read Screen with Extended Attributes
+constexpr uint8_t CC_READ_SCREEN_TO_PRINT = 0x66;
+constexpr uint8_t CC_READ_SCREEN_TO_PRINT_EXT_ATTR = 0x68;
 
 // Screen dimension defaults
 constexpr int DEFAULT_SCREEN_ROWS = 24;
