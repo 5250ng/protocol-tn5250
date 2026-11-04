@@ -32,7 +32,9 @@ enum class TN5250Command : uint8_t {
     READ_MODIFY_WRITE = 0x07,
     READ_MDT_FIELDS = 0x52,
     READ_INPUT_FIELDS = 0x42,
-    READ_IMMEDIATE = 0x72
+    READ_IMMEDIATE = 0x72,
+    READ_MDT_FIELDS_ALT = 0x82,
+    READ_MODIFIED_IMMEDIATE_ALT = 0x83
 };
 
 // TN5250 structured field types
