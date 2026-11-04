@@ -93,6 +93,34 @@ void testInvalidVarLen() {
     std::printf("PASS: testInvalidVarLen\n");
 }
 
+// A record that is only the GDS header and the 4-byte variable header (no
+// data) is complete: Save Screen, Invite, Cancel Invite and Message Light
+// On/Off are sent that way. A record cut off inside its variable header is
+// still rejected.
+void testRecordsWithoutDataAreProcessed() {
+    int save = 0, invite = 0, cancel = 0, lightOn = 0, lightOff = 0, errors = 0;
+    DecoderCallbacks cb;
+    cb.onSaveScreen = [&]() { ++save; };
+    cb.onInvite = [&]() { ++invite; };
+    cb.onCancelInvite = [&]() { ++cancel; };
+    cb.onMessageLightOn = [&]() { ++lightOn; };
+    cb.onMessageLightOff = [&]() { ++lightOff; };
+    cb.onParseError = [&](const std::string &) { ++errors; };
+
+    Decoder decoder(cb);
+    for (uint8_t opcode : {0x04, 0x01, 0x0A, 0x0B, 0x0C}) {
+        auto rec = makeGDS(opcode, {});
+        assert(rec.size() == 10);
+        decoder.parseData(rec);
+    }
+    assert(save == 1 && invite == 1 && cancel == 1 && lightOn == 1 && lightOff == 1);
+    assert(errors == 0);
+
+    decoder.parseData({0x00, 0x09, 0x12, 0xA0, 0x00, 0x00, 0x04, 0x00, 0x00});
+    assert(errors == 1);
+    std::printf("PASS: testRecordsWithoutDataAreProcessed\n");
+}
+
 void testStateTransitions() {
     int clearCount = 0;
     DecoderCallbacks cb;
@@ -408,6 +436,7 @@ int main() {
     testCommandWithData();
     testClearScreen();
     testInvalidVarLen();
+    testRecordsWithoutDataAreProcessed();
     testStateTransitions();
     testMultipleCommands();
     testWsfLengthPrefixHonoursEmbeddedEsc();

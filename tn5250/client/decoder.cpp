@@ -59,7 +59,10 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
 
         const int varHdrStart = 6;
         const int varLen = rec[varHdrStart];
-        if (static_cast<int>(rec.size()) < varHdrStart + 1 + varLen) {
+        // The variable header length counts its own byte (RFC 1205: 4 =
+        // length + flags(2) + opcode), so a record without data is exactly
+        // varHdrStart + varLen bytes long (Save Screen, Invite, ...).
+        if (static_cast<int>(rec.size()) < varHdrStart + varLen) {
             if (m_callbacks.onParseError) m_callbacks.onParseError("TN5250: incomplete variable header");
             continue;
         }
