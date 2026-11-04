@@ -134,6 +134,58 @@ void testMultipleCommands() {
     std::printf("PASS: testMultipleCommands\n");
 }
 
+// A structured field 1024-1279 bytes long has 0x04 as the high byte of its
+// length. The WSF walk used to take that byte for the ESC of the next command,
+// so the field was dropped and its data parsed as commands.
+void testWsfLengthHighByteIsNotEsc() {
+    std::vector<uint8_t> sfData;
+    int parseErrors = 0, clears = 0;
+    DecoderCallbacks cb;
+    cb.onWriteStructuredField = [&](const std::vector<uint8_t> &d) { sfData = d; };
+    cb.onParseError = [&](const std::string &) { parseErrors++; };
+    cb.onClearScreen = [&]() { clears++; };
+
+    Decoder decoder(cb);
+    // Two SFs: a short D9 34 and a 0x046E-byte D9 36 whose data holds an
+    // ESC 40 (Clear Unit) pattern that must not be decoded.
+    std::vector<uint8_t> wsf = {0x04, 0xF3, 0x00, 0x05, 0xD9, 0x34, 0x00};
+    std::vector<uint8_t> big(0x046E, 0x00);
+    big[0] = 0x04; big[1] = 0x6E; big[2] = 0xD9; big[3] = 0x36;
+    big[10] = 0x04; big[11] = 0x40;
+    wsf.insert(wsf.end(), big.begin(), big.end());
+    decoder.parseData(makeGDS(0x02, wsf));
+
+    assert(parseErrors == 0);
+    assert(clears == 0);
+    assert(sfData.size() == 5 + 0x046E);
+    assert(sfData[5] == 0x04 && sfData[6] == 0x6E && sfData[7] == 0xD9 && sfData[8] == 0x36);
+    std::printf("PASS: testWsfLengthHighByteIsNotEsc\n");
+}
+
+// The same long field first in the WSF, followed by another command in the
+// same record: the field is kept and the next command still runs.
+void testLongWsfFollowedByCommand() {
+    std::vector<uint8_t> sfData;
+    int parseErrors = 0, ccs = 0;
+    DecoderCallbacks cb;
+    cb.onWriteStructuredField = [&](const std::vector<uint8_t> &d) { sfData = d; };
+    cb.onParseError = [&](const std::string &) { parseErrors++; };
+    cb.onControlCharacters = [&](uint8_t, uint8_t) { ccs++; };
+
+    Decoder decoder(cb);
+    std::vector<uint8_t> big(0x0410, 0x00);
+    big[0] = 0x04; big[1] = 0x10; big[2] = 0xD9; big[3] = 0x36;
+    std::vector<uint8_t> payload = {0x04, 0xF3};
+    payload.insert(payload.end(), big.begin(), big.end());
+    payload.insert(payload.end(), {0x04, 0x11, 0x00, 0x08});  // WTD
+    decoder.parseData(makeGDS(0x02, payload));
+
+    assert(parseErrors == 0);
+    assert(sfData.size() == 0x0410);
+    assert(ccs == 1);
+    std::printf("PASS: testLongWsfFollowedByCommand\n");
+}
+
 // Regression test for protocol-tn5250#12 / 5250ng#103: a WSF whose data
 // contains an embedded 0x04 byte was previously truncated at that byte by the
 // scan-for-ESC heuristic. With the length-prefixed walk, the SF body is taken
@@ -411,6 +463,8 @@ int main() {
     testStateTransitions();
     testMultipleCommands();
     testWsfLengthPrefixHonoursEmbeddedEsc();
+    testWsfLengthHighByteIsNotEsc();
+    testLongWsfFollowedByCommand();
     testUnknownEscCommandDoesNotLeakIntoRawData();
     testStrayBytesAreNotEmittedAsRawScreenData();
     testStrpccmdMarkerFiresCallbackAndIsStrippedFromDisplay();
