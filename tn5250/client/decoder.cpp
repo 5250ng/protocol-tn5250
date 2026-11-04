@@ -189,11 +189,16 @@ void Decoder::parseData(const std::vector<uint8_t> &data) {
                         // 0x04 bytes, so we must not use ESC as a terminator.
                         // Walk every SF using its length, stop at the next ESC
                         // (start of another command) or end of payload, and
-                        // hand the raw SF bytes to the caller.
+                        // hand the raw SF bytes to the caller. A leading 0x04
+                        // is only an ESC when no 5250 class byte (0xD9)
+                        // follows the length: an SF 1024-1279 bytes long has
+                        // 0x04 as its length high byte.
                         int j = i + 2;
                         const int wsfStart = j;
                         while (j + 1 < static_cast<int>(payload.size())) {
-                            if (payload[j] == ESC) break;
+                            const bool sfClassFollows = j + 2 < static_cast<int>(payload.size()) &&
+                                                        payload[j + 2] == SF_CLASS_5250;
+                            if (payload[j] == ESC && !sfClassFollows) break;
                             const int sfLen = (static_cast<int>(payload[j]) << 8) |
                                               static_cast<int>(payload[j + 1]);
                             if (sfLen < 2 || j + sfLen > static_cast<int>(payload.size())) {

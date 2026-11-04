@@ -78,6 +78,9 @@ constexpr uint8_t ORDER_TD   = 0x10; // Transparent Data
 constexpr uint8_t ORDER_WEA  = 0x12; // Write Extended Attribute
 constexpr uint8_t ORDER_WDSF = 0x15; // Write to Display Structured Field (new-style)
 
+// Structured field class of the 5250 WSF structured fields
+constexpr uint8_t SF_CLASS_5250 = 0xD9;
+
 // Read Screen command codes (ESC + CC)
 constexpr uint8_t CC_READ_SCREEN          = 0x62;
 constexpr uint8_t CC_READ_SCREEN_ALT      = 0x66;
